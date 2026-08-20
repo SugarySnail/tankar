@@ -216,8 +216,15 @@ def get_post_by_xml_filename(xml_filename):
         root = tree.getroot()
         
         title = root.findtext("title", "")
-        date = root.findtext("date", "")
-        date_part = date.split("T")[0] if date else "0000-00-00"
+        date_str = root.findtext("date", "")
+        
+        # Konvertera datum-sträng till datetime-objekt
+        try:
+            date = datetime.fromisoformat(date_str)
+        except (ValueError, TypeError):
+            date = datetime(1900, 1, 1)
+        
+        date_part = date.strftime("%Y-%m-%d")
         
         tags = []
         tags_elem = root.find("tags")
@@ -238,16 +245,13 @@ def get_post_by_xml_filename(xml_filename):
 
 
 
+
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
     safe_content = process_images_in_content(post["content"])
     
-    try:
-        dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
-        formatted_date = dt.strftime("%Y-%m-%d %H:%M")
-    except:
-        formatted_date = post["date"]
-    
+    # post["date"] är redan ett datetime-objekt, så formatera direkt
+    formatted_date = post["date"].strftime("%Y-%m-%d %H:%M")
     safe_date = html.escape(formatted_date)
 
     nav_html = ""
@@ -290,83 +294,8 @@ def make_post_html(post, include_admin_nav=False):
 
 
 
-def make_index_html(posts, include_admin_nav=False):
-    nav_html = create_nav(active_page='home', depth=0)
-    
-    cards = ""
-    for post in posts:
-        safe_title = html.escape(post["title"])
-        
-        try:
-            dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
-            formatted_date = dt.strftime("%Y-%m-%d %H:%M")
-        except:
-            formatted_date = post["date"]
-        
-        safe_date = html.escape(formatted_date)
-        safe_content = post["content"]
-        
-        tags_html = ""
-        if post.get("tags"):
-            tag_links = []
-            for tag in post["tags"]:
-                tag_slug = tag.replace(" ", "-").lower()
-                tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
-            tags_html = " ".join(tag_links)
-            tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
 
-        if include_admin_nav:
-            link = f"/posts/{post['filename']}"
-            xml_filename = post.get("xml_filename", "")
-            edit_button = f'<a href="/edit/{xml_filename}" style="color:#ff9800; margin-left:10px;">✎ Redigera</a>'
-        else:
-            link = f"posts/{post['filename']}"
-            edit_button = ""
-        
-        cards += f"""
-        <div class="card">
-            <h2><a href="{link}">{safe_title}</a>{edit_button}</h2>
-            <p class="date">{safe_date}</p>
-            <div>{safe_content}</div>
-            {tags_html}
-        </div>"""
-    
-    nav_section = ""
-    if include_admin_nav:
-        nav_section = """
-    <nav class="menu">
-        <a href="/create">Skapa inlägg</a>
-        <a href="/micro-create">Mikroinlägg</a>
-        <a href="/export">Exportera</a>
-    </nav>"""
-    else:
-        nav_section = f"    {nav_html}"
-
-    return f"""<!doctype html>
-<html lang="sv">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="css/style.css">
-    <title>{SITE_TITLE}</title>
-</head>
-<body>
-    <header class="header">
-        <div class="header-content">
-            <h1>{SITE_TITLE}</h1>
-            <p>{SITE_DESCRIPTION}</p>
-        </div>
-    </header>
-    {nav_section}
-    <div class="grid">
-        {cards}
-    </div>
-</body>
-</html>"""
-
-
-
-def paginate_posts(posts, per_page=20):
+def paginate_posts(posts, per_page=10):
     """Delar upp inlägg i sidor. Returnerar lista av listor."""
     pages = []
     for i in range(0, len(posts), per_page):
@@ -396,7 +325,7 @@ def make_pagination_html(current_page, total_pages, base_url="/"):
     html += '</nav>\n'
     return html
 
-def make_paginated_index_html(all_posts, posts_per_page=20):
+def make_paginated_index_html(all_posts, posts_per_page=10):
     """Genererar alla indexsidor med paginering"""
     pages = paginate_posts(all_posts, posts_per_page)
     total_pages = len(pages)
@@ -407,34 +336,66 @@ def make_paginated_index_html(all_posts, posts_per_page=20):
             filename = "index.html"
         else:
             filename = f"page-{page_num}.html"
+        filepath = OUTPUT_DIR / filename
         
-        filepath = os.path.join(OUTPUT_DIR, filename)
-        
-        # Bygga innehål
-        content = '<div class="posts">\n'
+        # Bygga inlägg-kortet
+        cards = ""
         for post in page_posts:
-            content += f'  <article class="post-preview">\n'
-            content += f'    <h2><a href="{post["url"]}">{post["title"]}</a></h2>\n'
-            content += f'    <p class="meta">{post["date"].strftime("%Y-%m-%d")}</p>\n'
-            content += f'    <p>{post["content"][:200]}...</p>\n'  # Första 200 tecken
-            content += f'    <a href="{post["url"]}">Läs mer →</a>\n'
-            content += f'  </article>\n'
-        content += '</div>\n'
+            safe_title = html.escape(post["title"])
+            safe_date = post["date"].strftime("%Y-%m-%d")
+            safe_content = post["content"]
+            
+            # Skapa taginformation
+            tags_html = ""
+            if post.get("tags"):
+                tag_links = []
+                for tag in post["tags"]:
+                    tag_slug = tag.replace(" ", "-").lower()
+                    tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+                tags_html = " ".join(tag_links)
+                tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
+            
+            cards += f"""
+<div class="card">
+<h2><a href="posts/{post['filename']}">{safe_title}</a></h2>
+<p class="date">{safe_date}</p>
+<div>{safe_content}</div>
+{tags_html}
+</div>"""
         
         # Lägg till paginering
-        content += make_pagination_html(page_num, total_pages, base_url="/")
+        pagination_html = make_pagination_html(page_num, total_pages, base_url="/")
         
-        # Generera HTML-sidan
-        html = make_html_skeleton(
-            title="Blogg",
-            content=content,
-            nav=make_nav_html()
-        )
+        # Generera full HTML-sidan
+        nav_html = create_nav(active_page='home', depth=0)
+        html_content = f"""<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/style.css">
+<title>{SITE_TITLE}</title>
+</head>
+<body>
+<header class="header">
+<div class="header-content">
+<h1>{SITE_TITLE}</h1>
+<p>{SITE_DESCRIPTION}</p>
+</div>
+</header>
+{nav_html}
+<div class="grid">
+{cards}
+</div>
+{pagination_html}
+</body>
+</html>"""
         
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(html)
-        
+        # Skriv fil
+        filepath.write_text(html_content, encoding='utf-8')
         print(f"✓ Genererade {filename}")
+
+
 
 
 
@@ -734,7 +695,7 @@ def make_tag_index_html(post, tag, posts):
         posts_html += f"""
     <article class="card">
         <h2><a href="../../posts/{p['filename']}">{safe_title}</a></h2>
-        <p class="date">{p['date'].split('T')[0]}</p>
+        <p class="date">{p['date'].strftime("%Y-%m-%d")}</p>
         <div>{safe_content}</div>
     </article>
 """
@@ -768,6 +729,7 @@ def make_tag_index_html(post, tag, posts):
     
     index_file = tag_dir / "index.html"
     index_file.write_text(html_content, encoding="utf-8")
+
 
 
 
@@ -944,8 +906,9 @@ def create_rss_file(posts, filename, tag=None):
     ]
     
     for post in posts:
-        date_part = post["date"].split("T")[0]
+        date_part = post["date"].strftime("%Y-%m-%d")
         post_slug = slugify(post["title"])
+        rss_date = post["date"].strftime("%a, %d %b %Y %H:%M:%S +0000")
         
         rss_lines.extend([
             '<item>',
@@ -954,7 +917,7 @@ def create_rss_file(posts, filename, tag=None):
             '<description>',
             f'<![CDATA[{post["content"]}]]>',
             '</description>',
-            f'<pubDate>{post["date"]}</pubDate>',
+            f'<pubDate>{rss_date}</pubDate>',
         ])
         
         if post.get("tags"):
@@ -972,6 +935,7 @@ def create_rss_file(posts, filename, tag=None):
     with open(output_path, 'w', encoding='UTF-8') as f:
         f.write('\n'.join(rss_lines))
 
+
 def escape_xml(text):
     """Escapar XML-specialtecken"""
     return (text
@@ -987,7 +951,7 @@ def escape_xml(text):
 
 def save_post(title, date, content, tags_str, xml_filename=None):
     if not xml_filename:
-        date_part = date.split("T")[0]
+        date_part = date.strftime("%Y-%m-%d")
         slug = slugify(title)
         xml_filename = POSTS_DIR / f"{date_part}-{slug}.xml"
     else:
@@ -995,8 +959,8 @@ def save_post(title, date, content, tags_str, xml_filename=None):
   
 
     # Normalize curly quotes to straight quotes in links
-    content = content.replace('=”', '="')  
-    content = content.replace('”>', '">')  
+    content = content.replace('="', '="')  
+    content = content.replace('">', '">')  
 
     # Ensure content starts with <p> and ends with </p>
     if not content.startswith('<p>'):
@@ -1008,7 +972,7 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     
     root = ET.Element("post")
     ET.SubElement(root, "title").text = title
-    ET.SubElement(root, "date").text = date
+    ET.SubElement(root, "date").text = date.strftime("%Y-%m-%dT%H:%M:%S")
     ET.SubElement(root, "content").text = content
     
     tags_elem = ET.SubElement(root, "tags")
@@ -1021,12 +985,13 @@ def save_post(title, date, content, tags_str, xml_filename=None):
 
 
 
+
 def rebuild_outputs():
     """Regenerera alla statiska HTML-filer"""
     posts = load_posts()
     
     # Generera paginerad blogg-index
-    make_paginated_index_html(posts, posts_per_page=20)
+    make_paginated_index_html(posts, posts_per_page=10)
     
     for post in posts:
         if post:
