@@ -180,6 +180,9 @@ def make_rss_page_html(posts):
     output_file = Path('output') / 'pages' / 'rss.html'
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(html, encoding='utf-8')
+    
+    return html  # ← LÄGG TILL DENNA RAD
+
 
 def escape_xml(text):
     """Escapar XML-specialtecken"""
@@ -189,6 +192,38 @@ def escape_xml(text):
         .replace('>', '&gt;')
         .replace('"', '&quot;')
         .replace("'", '&apos;'))
+
+def create_rss_file(posts, filename, tag=None):
+    """Skapar en RSS-fil för de givna inläggen"""
+    rss = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+    <channel>
+        <title>{escape_xml(SITE_TITLE)}{f' - {tag}' if tag else ''}</title>
+        <link>{SITE_URL}</link>
+        <description>{escape_xml(SITE_DESCRIPTION)}</description>
+        <language>sv</language>
+"""
+    
+    for post in posts:
+        content_processed = process_images_in_content(post.get("content", ""))
+        date_obj = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+        rss_date = date_obj.strftime("%a, %d %b %Y %H:%M:%S +0000")
+        post_url = f"{SITE_URL}/posts/{post['filename']}"
+        
+        rss += f"""        <item>
+            <title>{escape_xml(post['title'])}</title>
+            <link>{post_url}</link>
+            <pubDate>{rss_date}</pubDate>
+            <description>{escape_xml(post['content'][:300])}</description>
+            <content:encoded><![CDATA[{content_processed}]]></content:encoded>
+        </item>
+"""
+    
+    rss += """    </channel>
+</rss>"""
+    
+    output_file = Path('output') / filename
+    output_file.write_text(rss, encoding='utf-8')
 
 def generate_rss_feeds(posts):
     """Genererar rss.xml (alla inlägg) och rss-ETIKETT.xml för varje etikett"""
@@ -722,6 +757,15 @@ def rebuild_outputs():
     archive_dir.mkdir(parents=True, exist_ok=True)
     (archive_dir / 'index.html').write_text(archive_html, encoding='utf-8')
     print("✓ Arkiv regenererat")
+
+    # Generera RSS-flöden
+    generate_rss_feeds(posts)
+    
+    # Generera RSS-sida
+    rss_page_html = make_rss_page_html(posts)
+    rss_output_dir = Path('output/pages')
+    rss_output_dir.mkdir(parents=True, exist_ok=True)
+    (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
 
 def generate_rss_feeds(posts):
     """Genererar RSS-feeds"""
