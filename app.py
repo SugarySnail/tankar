@@ -761,30 +761,42 @@ def rebuild_outputs():
     (archive_dir / 'index.html').write_text(archive_html, encoding='utf-8')
     print("✓ Arkiv regenererat")
 
-    # Generera individuella tag-sidor
+    # Generera tag-specifika arkiv-sidor
+    print("Börjar generera tag-sidor...")
     for tag in tags:
-        tag_slug = tag.replace(" ", "-").lower()
-        filtered_posts = [p for p in posts if tag in p.get("tags", []) and "poesi" not in p.get("tags", [])] # utom poesi
-
+        if tag == "poesi":  # Hoppa över poesi-taggen
+            continue
         
-        print(f"Tag: {tag}, Antal posts: {len(filtered_posts)}")
+        tag_slug = slugify(tag)
+        filtered_posts = [p for p in posts if tag in p.get("tags", []) and "poesi" not in p.get("tags", [])]
+        months = get_months_from_posts(filtered_posts)
+        
+        print(f"  Tag: {tag}, Slug: {tag_slug}, Inlägg: {len(filtered_posts)}")
+        
         if filtered_posts:
-            print(f"Första post: {filtered_posts[0].keys()}")
-
-        tag_html = render_template(
-            "tag_archive.html",
-            tag=tag,
-            posts=filtered_posts,
-            site_title=SITE_TITLE,
-            site_description=SITE_DESCRIPTION,
-            nav_html=create_nav(active_page='tags', depth=2)
-        )
+            print(f"  Första post: {filtered_posts[0]}")
         
-        tag_dir = Path(f'output/tags/{tag_slug}')
-        tag_dir.mkdir(parents=True, exist_ok=True)
-        (tag_dir / 'index.html').write_text(tag_html, encoding='utf-8')
+        try:
+            html = render_template("tag_archive.html", 
+                                 posts=filtered_posts, 
+                                 tag=tag, 
+                                 months=months,
+                                 nav_html=create_nav(active_page='tags', depth=2))
+            print(f"  render_template lyckades för {tag}")
+        except Exception as e:
+            print(f"  ERROR i render_template: {str(e)}")
+            continue
+        
+        try:
+            tag_dir = Path('output/tags') / tag_slug
+            tag_dir.mkdir(parents=True, exist_ok=True)
+            (tag_dir / 'index.html').write_text(html, encoding='utf-8')
+            print(f"  ✓ Tag-sida '{tag}' sparad")
+        except Exception as e:
+            print(f"  ERROR vid sparande: {str(e)}")
 
-    print("✓ Tag-sidor regenererade")
+    print("✓ Tag-sidor klara")
+
 
 
     # Generera RSS-flöden
