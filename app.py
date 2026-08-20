@@ -777,7 +777,7 @@ def rebuild_outputs():
             print(f"  Första post: {filtered_posts[0]}")
         
         try:
-            html = render_template("tag_archive.html", 
+            tag_html = render_template("tag_archive.html", 
                                  posts=filtered_posts, 
                                  tag=tag, 
                                  months=months,
@@ -790,7 +790,7 @@ def rebuild_outputs():
         try:
             tag_dir = Path('output/tags') / tag_slug
             tag_dir.mkdir(parents=True, exist_ok=True)
-            (tag_dir / 'index.html').write_text(html, encoding='utf-8')
+            (tag_dir / 'index.html').write_text(tag_html, encoding='utf-8')
             print(f"  ✓ Tag-sida '{tag}' sparad")
         except Exception as e:
             print(f"  ERROR vid sparande: {str(e)}")
