@@ -65,6 +65,38 @@ def process_images_in_content(content):
     return re.sub(r'<img[^>]*/?>', replace_img, content)
 
 
+def paginate_posts(posts, per_page=10):
+    """Delar upp inlägg i sidor. Returnerar lista av listor."""
+    pages = []
+    for i in range(0, len(posts), per_page):
+        pages.append(posts[i:i+per_page])
+    return pages
+
+
+def make_pagination_html(current_page, total_pages, base_url=""):
+    """Skapar HTML för sidnavigation (Föregående | Nästa)"""
+    html_out = '<nav class="pagination">\n'
+    
+    # Föregående-knapp
+    if current_page > 1:
+        if current_page == 2:
+            prev_url = "index.html"
+        else:
+            prev_url = f"page-{current_page - 1}.html"
+        html_out += f' <a href="{prev_url}" class="prev">← Föregående</a>\n'
+    
+    # Sidnummer
+    html_out += f' <span class="page-info">Sida {current_page} av {total_pages}</span>\n'
+    
+    # Nästa-knapp
+    if current_page < total_pages:
+        next_url = f"page-{current_page + 1}.html"
+        html_out += f' <a href="{next_url}" class="next">Nästa →</a>\n'
+    
+    html_out += '</nav>\n'
+    return html_out
+
+
 def load_posts():
     posts = []
     for file in POSTS_DIR.glob("*.xml"):
@@ -189,11 +221,20 @@ def create_nav(active_page=None, depth=0):
     return nav_html
 
 
-def make_index_html(posts, include_admin_nav=False):
+def make_index_html(posts, include_admin_nav=False, per_page=10):
+    """Generera indexsida med pagination"""
     nav_html = create_nav(active_page='home', depth=0)
     
+    # Dela upp inlägg i sidor
+    pages = paginate_posts(posts, per_page)
+    if not pages:
+        return ""
+    
+    # Generera första sidan (index.html)
+    page_posts = pages[0]
     cards = ""
-    for post in posts:
+    
+    for post in page_posts:
         safe_title = html.escape(post["title"])
         
         try:
@@ -230,6 +271,9 @@ def make_index_html(posts, include_admin_nav=False):
             {tags_html}
         </div>"""
     
+    # Pagination
+    pagination = make_pagination_html(1, len(pages)) if len(pages) > 1 else ""
+    
     nav_section = ""
     if include_admin_nav:
         nav_section = """
@@ -259,9 +303,10 @@ def make_index_html(posts, include_admin_nav=False):
     {nav_section}
     <div class="grid">
         {cards}
+        {pagination}
     </div>
 </body>
-</html>"""
+</html>""", pages
 
 
 def make_post_html(post, include_admin_nav=False):
@@ -356,20 +401,164 @@ def save_microblog_post(content):
     tree.write(filepath, encoding='utf-8', xml_declaration=True)
 
 
+def make_microblog_html(posts):
+    """Generera microblogs-sidor med pagination"""
+    MICRO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Dela upp i sidor
+    total_pages = (len(posts) + MICRO_PER_PAGE - 1) // MICRO_PER_PAGE
+    
+    for page_num in range(1, total_pages + 1):
+        start_idx = (page_num - 1) * MICRO_PER_PAGE
+        end_idx = start_idx + MICRO_PER_PAGE
+        page_posts = posts[start_idx:end_idx]
+        
+        # Bygg inläggen med löpnummer
+        posts_html = ''
+        for idx, post in enumerate(page_posts):
+            post_number = len(posts) - start_idx - idx
+            posts_html += f'''<div class="micro-post">
+            <div class="micro-content">{post['content']}</div>
+            <div class="micro-footer">
+                <span class="micro-time">{post['timestamp'][:16].replace('T', ' ')}</span>
+                <span class="micro-number">#{post_number}</span>
+            </div>
+            </div>
+            '''
+        
+        # Pagination
+        pagination_html = make_pagination_html(page_num, total_pages) if total_pages > 1 else ''
+        
+        nav_html = create_nav(active_page='micro', depth=1)
+        
+        html_content = f'''<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mikroblogg - My Jakobsson</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>My Jakobsson</h1>
+            <p>tankar</p>
+        </div>
+    </header>
+    {nav_html}
+    <main>
+        <div class="grid">
+            <div class="card">
+                <h2>Mikroblogg</h2>
+                <div style="display: flex; gap: 1rem; align-items: top;">
+                    <img src="../bilder/static/mythinking.jpg" alt="Lekfull teckning av My med en fundersam min och stora glasögon, klädd i en mysig hoodie" style="width: 130px; height: 130px; flex-shrink: 0; border-radius: 8px;">
+                    <div>
+                        <p>Prenumerera <a href="/rss-micro.xml">via RSS</a>.</p>
+                    </div>
+                </div>
+                {posts_html}
+                {pagination_html}
+            </div>
+        </div>
+    </main>
+</body>
+</html>'''
+        
+        # Skriv fil
+        if page_num == 1:
+            output_file = MICRO_OUTPUT_DIR / 'index.html'
+        else:
+            output_file = MICRO_OUTPUT_DIR / f'page-{page_num}.html'
+        
+        output_file.write_text(html_content, encoding='utf-8')
+    
+    print("✓ Mikroblogg regenererad med pagination")
+
+
 def rebuild_outputs():
     """Regenerera alla statiska HTML-filer"""
     posts = load_posts()
     
-    # Generera blogg-sidor
-    index_html = make_index_html(posts, include_admin_nav=False)
+    # Generera blogg-sidor med pagination
+    index_html, pages = make_index_html(posts, include_admin_nav=False, per_page=10)
     Path('output/index.html').write_text(index_html, encoding='utf-8')
     
+    # Generera övriga sidor
+    if len(pages) > 1:
+        for page_num in range(2, len(pages) + 1):
+            page_posts = pages[page_num - 1]
+            page_html, _ = make_index_html(posts, include_admin_nav=False, per_page=10)
+            
+            # Skapa sida N
+            cards = ""
+            for post in page_posts:
+                safe_title = html.escape(post["title"])
+                try:
+                    dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+                    formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+                except:
+                    formatted_date = post["date"]
+                
+                safe_date = html.escape(formatted_date)
+                safe_content = post["content"]
+                
+                tags_html = ""
+                if post.get("tags"):
+                    tag_links = []
+                    for tag in post["tags"]:
+                        tag_slug = tag.replace(" ", "-").lower()
+                        tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+                    tags_html = " ".join(tag_links)
+                    tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
+                
+                cards += f"""
+        <div class="card">
+            <h2><a href="posts/{post['filename']}">{safe_title}</a></h2>
+            <p class="date">{safe_date}</p>
+            <div>{safe_content}</div>
+            {tags_html}
+        </div>"""
+            
+            pagination = make_pagination_html(page_num, len(pages))
+            nav_html = create_nav(active_page='home', depth=0)
+            
+            page_content = f"""<!doctype html>
+<html lang="sv">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/style.css">
+    <title>{SITE_TITLE}</title>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>{SITE_TITLE}</h1>
+            <p>{SITE_DESCRIPTION}</p>
+        </div>
+    </header>
+    {nav_html}
+    <div class="grid">
+        {cards}
+        {pagination}
+    </div>
+</body>
+</html>"""
+            
+            Path(f'output/page-{page_num}.html').write_text(page_content, encoding='utf-8')
+    
+    # Generera individuella inlägg
     for post in posts:
         if post:
             post_html = make_post_html(post)
             output_file = Path('output/posts') / post['filename']
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(post_html, encoding='utf-8')
+    
+    # Generera mikroblogg
+    micro_posts = load_microblog_posts()
+    make_microblog_html(micro_posts)
     
     print("✓ Regenererade alla inlägg och index")
 
@@ -403,7 +592,8 @@ def index():
     try:
         posts = load_posts()
         generate_rss_feeds(posts)
-        return make_index_html(posts, include_admin_nav=True)
+        index_html, _ = make_index_html(posts, include_admin_nav=True, per_page=10)
+        return index_html
     except Exception as e:
         print(f"Error in index route: {e}")
         return f"Error: {str(e)}", 500
@@ -448,6 +638,7 @@ def micro_post():
         save_microblog_post(content)
         
         posts = load_microblog_posts()
+        make_microblog_html(posts)
         
         return '''
         <!doctype html>
@@ -579,6 +770,79 @@ def export_site():
     except Exception as e:
         print(f"Error in export: {e}")
         return f"Exportfel: {str(e)}", 500
+
+
+@app.route("/page-<int:page_num>")
+@admin_only
+def paginated_index(page_num):
+    """Visa paginererad index (sida 2, 3, osv)"""
+    try:
+        posts = load_posts()
+        pages = paginate_posts(posts, per_page=10)
+        
+        if page_num < 1 or page_num > len(pages):
+            return "Sidan finns inte", 404
+        
+        nav_html = create_nav(active_page='home', depth=0)
+        page_posts = pages[page_num - 1]
+        
+        cards = ""
+        for post in page_posts:
+            safe_title = html.escape(post["title"])
+            
+            try:
+                dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+                formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+            except:
+                formatted_date = post["date"]
+            
+            safe_date = html.escape(formatted_date)
+            safe_content = post["content"]
+            
+            tags_html = ""
+            if post.get("tags"):
+                tag_links = []
+                for tag in post["tags"]:
+                    tag_slug = tag.replace(" ", "-").lower()
+                    tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+                tags_html = " ".join(tag_links)
+                tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
+            
+            cards += f"""
+        <div class="card">
+            <h2><a href="posts/{post['filename']}">{safe_title}</a></h2>
+            <p class="date">{safe_date}</p>
+            <div>{safe_content}</div>
+            {tags_html}
+        </div>"""
+        
+        pagination = make_pagination_html(page_num, len(pages))
+        
+        return f"""<!doctype html>
+<html lang="sv">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/style.css">
+    <title>{SITE_TITLE}</title>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>{SITE_TITLE}</h1>
+            <p>{SITE_DESCRIPTION}</p>
+        </div>
+    </header>
+    {nav_html}
+    <div class="grid">
+        {cards}
+        {pagination}
+    </div>
+</body>
+</html>"""
+    except Exception as e:
+        print(f"Error in paginated_index: {e}")
+        return f"Error: {str(e)}", 500
 
 
 if __name__ == "__main__":
