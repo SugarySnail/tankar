@@ -162,6 +162,8 @@ def load_posts():
     posts.sort(key=lambda x: x["date"], reverse=True)
     return posts
 
+from datetime import datetime
+
 def parse_post(xml_file):
     try:
         tree = ET.parse(xml_file)
@@ -173,21 +175,32 @@ def parse_post(xml_file):
             tags = [tag.text for tag in tags_elem.findall("tag") if tag.text]
         
         title = root.findtext("title", "")
-        date = root.findtext("date", "")
-        date_part = date.split("T")[0] if date else "0000-00-00"
+        date_str = root.findtext("date", "")
+        
+        # Konvertera datum-sträng till datetime-objekt
+        try:
+            date_obj = datetime.fromisoformat(date_str) if date_str else datetime(1900, 1, 1)
+        except ValueError:
+            date_obj = datetime(1900, 1, 1)
+        
+        date_part = date_obj.strftime("%Y-%m-%d")
+        filename = f"{date_part}-{slugify(title)}.html"
         
         return {
             "title": title,
-            "date": date,
+            "date": date_obj,
             "content": root.findtext("content", ""),
             "tags": tags,
             "tags_str": ", ".join(tags),
-            "filename": f"{date_part}-{slugify(title)}.html",
+            "filename": filename,
+            "url": f"/{filename}",
             "xml_filename": Path(xml_file).name
         }
     except Exception as e:
         print(f"Error parsing {xml_file}: {e}")
         return None
+
+
 
 
 
@@ -350,6 +363,78 @@ def make_index_html(posts, include_admin_nav=False):
     </div>
 </body>
 </html>"""
+
+
+
+def paginate_posts(posts, per_page=20):
+    """Delar upp inlägg i sidor. Returnerar lista av listor."""
+    pages = []
+    for i in range(0, len(posts), per_page):
+        pages.append(posts[i:i+per_page])
+    return pages
+
+def make_pagination_html(current_page, total_pages, base_url="/"):
+    """Skapar HTML för sidnavigation (Föregående | Nästa)"""
+    html = '<nav class="pagination">\n'
+    
+    # Föregående-knapp
+    if current_page > 1:
+        if current_page == 2:
+            prev_url = base_url
+        else:
+            prev_url = f"{base_url}page-{current_page - 1}.html"
+        html += f'  <a href="{prev_url}" class="prev">← Föregående</a>\n'
+    
+    # Sidnummer
+    html += f'  <span class="page-info">Sida {current_page} av {total_pages}</span>\n'
+    
+    # Nästa-knapp
+    if current_page < total_pages:
+        next_url = f"{base_url}page-{current_page + 1}.html"
+        html += f'  <a href="{next_url}" class="next">Nästa →</a>\n'
+    
+    html += '</nav>\n'
+    return html
+
+def make_paginated_index_html(all_posts, posts_per_page=20):
+    """Genererar alla indexsidor med paginering"""
+    pages = paginate_posts(all_posts, posts_per_page)
+    total_pages = len(pages)
+    
+    for page_num, page_posts in enumerate(pages, 1):
+        # Bestäm filnamn
+        if page_num == 1:
+            filename = "index.html"
+        else:
+            filename = f"page-{page_num}.html"
+        
+        filepath = os.path.join(OUTPUT_DIR, filename)
+        
+        # Bygga innehål
+        content = '<div class="posts">\n'
+        for post in page_posts:
+            content += f'  <article class="post-preview">\n'
+            content += f'    <h2><a href="{post["url"]}">{post["title"]}</a></h2>\n'
+            content += f'    <p class="meta">{post["date"].strftime("%Y-%m-%d")}</p>\n'
+            content += f'    <p>{post["content"][:200]}...</p>\n'  # Första 200 tecken
+            content += f'    <a href="{post["url"]}">Läs mer →</a>\n'
+            content += f'  </article>\n'
+        content += '</div>\n'
+        
+        # Lägg till paginering
+        content += make_pagination_html(page_num, total_pages, base_url="/")
+        
+        # Generera HTML-sidan
+        html = make_html_skeleton(
+            title="Blogg",
+            content=content,
+            nav=make_nav_html()
+        )
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(html)
+        
+        print(f"✓ Genererade {filename}")
 
 
 
@@ -940,9 +1025,8 @@ def rebuild_outputs():
     """Regenerera alla statiska HTML-filer"""
     posts = load_posts()
     
-    # Generera blogg-sidor
-    index_html = make_index_html(posts, include_admin_nav=False)
-    Path('output/index.html').write_text(index_html, encoding='utf-8')
+    # Generera paginerad blogg-index
+    make_paginated_index_html(posts, posts_per_page=20)
     
     for post in posts:
         if post:
@@ -970,6 +1054,7 @@ def rebuild_outputs():
     # Generera mikroblogg
     micro_posts = load_microblog_posts()
     make_microblog_html(micro_posts)
+
 
 
 
@@ -1113,4 +1198,3 @@ def export_site():
 
 if __name__ == "__main__":
     app.run(debug=True)
-
