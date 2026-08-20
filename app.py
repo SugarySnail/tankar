@@ -778,10 +778,12 @@ def rebuild_outputs():
         
         try:
             tag_html = render_template("tag_archive.html", 
-                                 posts=filtered_posts, 
-                                 tag=tag, 
-                                 months=months,
-                                 nav_html=create_nav(active_page='tags', depth=2))
+                           posts=filtered_posts, 
+                           tag=tag, 
+                           months=months,
+                           nav_html=create_nav(active_page='tags', depth=2),
+                           site_title=SITE_TITLE,
+                           site_description=SITE_DESCRIPTION)
             print(f"  render_template lyckades för {tag}")
         except Exception as e:
             print(f"  ERROR i render_template: {str(e)}")
