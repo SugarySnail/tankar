@@ -5,7 +5,7 @@ import html
 import re
 import xml.etree.ElementTree as ET
 import os
-from collections import Counter
+from collections import Counter, defaultdict
 from functools import wraps
 
 app = Flask(__name__, static_folder='output', static_url_path='')
@@ -18,6 +18,7 @@ BASE_DIR = Path(__file__).parent
 POSTS_DIR = BASE_DIR / "posts"
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_POSTS_DIR = OUTPUT_DIR / "posts"
+ARCHIVE_OUTPUT_DIR = OUTPUT_DIR / "archive"
 
 MICRO_DIR = Path('posts/micro')
 MICRO_OUTPUT_DIR = Path('output/micro')
@@ -25,6 +26,7 @@ MICRO_PER_PAGE = 30
 
 POSTS_DIR.mkdir(exist_ok=True)
 OUTPUT_POSTS_DIR.mkdir(parents=True, exist_ok=True)
+ARCHIVE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SITE_URL = "https://tankar.myjak.net"
 SITE_TITLE = "My Jakobsson"
@@ -32,7 +34,7 @@ SITE_DESCRIPTION = "tankar"
 
 
 # ============================================================================
-# HJÄLPFUNKTIONER (måste komma före routes!)
+# HJÄLPFUNKTIONER
 # ============================================================================
 
 def slugify(text):
@@ -208,6 +210,7 @@ def create_nav(active_page=None, depth=0):
         (f"{prefix}micro/index.html", "Mikroblogg", "micro"),
         (f"{prefix}pages/faq.html", "FAQ", "faq"),
         (f"{prefix}tags/index.html", "Arkiv", "tags"),
+        (f"{prefix}archive/", "År & månad", "archive"),
         (f"{prefix}pages/rss.html", "RSS", "rss"),
         (f"{prefix}pages/om.html", "Om", "om"),
     ]
@@ -219,6 +222,208 @@ def create_nav(active_page=None, depth=0):
     nav_html += '</nav>'
     
     return nav_html
+
+
+def make_archive_month_html(posts_for_month, year, month):
+    """Generera arkivsida för en månad"""
+    nav_html = create_nav(active_page='archive', depth=3)
+    
+    month_names = {
+        '01': 'Januari', '02': 'Februari', '03': 'Mars', '04': 'April',
+        '05': 'Maj', '06': 'Juni', '07': 'Juli', '08': 'Augusti',
+        '09': 'September', '10': 'Oktober', '11': 'November', '12': 'December'
+    }
+    
+    month_name = month_names.get(month, month)
+    
+    cards = ""
+    for post in posts_for_month:
+        safe_title = html.escape(post["title"])
+        
+        try:
+            dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+            formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+        except:
+            formatted_date = post["date"]
+        
+        safe_date = html.escape(formatted_date)
+        safe_content = post["content"][:200] + "..." if len(post["content"]) > 200 else post["content"]
+        
+        cards += f"""
+        <div class="card">
+            <h3><a href="../../posts/{post['filename']}">{safe_title}</a></h3>
+            <p class="date">{safe_date}</p>
+            <div>{safe_content}</div>
+        </div>"""
+    
+    html_content = f"""<!doctype html>
+<html lang="sv">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="../../../css/style.css">
+    <title>Arkiv {month_name} {year} - {SITE_TITLE}</title>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>{SITE_TITLE}</h1>
+            <p>tankar</p>
+        </div>
+    </header>
+    {nav_html}
+    <div class="grid">
+        <div class="card">
+            <h2>{month_name} {year}</h2>
+            <p><a href="../">← Tillbaka till år</a></p>
+        </div>
+        {cards}
+    </div>
+</body>
+</html>"""
+    
+    return html_content
+
+
+def make_archive_year_html(year, months_with_posts):
+    """Generera arkivsida för ett år"""
+    nav_html = create_nav(active_page='archive', depth=2)
+    
+    month_names = {
+        '01': 'Januari', '02': 'Februari', '03': 'Mars', '04': 'April',
+        '05': 'Maj', '06': 'Juni', '07': 'Juli', '08': 'Augusti',
+        '09': 'September', '10': 'Oktober', '11': 'November', '12': 'December'
+    }
+    
+    months_html = ""
+    for month in sorted(months_with_posts.keys(), reverse=True):
+        month_name = month_names.get(month, month)
+        post_count = len(months_with_posts[month])
+        months_html += f'<li><a href="{month}/">{month_name}</a> ({post_count})</li>\n'
+    
+    html_content = f"""<!doctype html>
+<html lang="sv">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="../../css/style.css">
+    <title>Arkiv {year} - {SITE_TITLE}</title>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>{SITE_TITLE}</h1>
+            <p>tankar</p>
+        </div>
+    </header>
+    {nav_html}
+    <div class="grid">
+        <div class="card">
+            <h1>Arkiv {year}</h1>
+            <p><a href="../">← Tillbaka till arkiv</a></p>
+            <h3>Månader</h3>
+            <ul>
+                {months_html}
+            </ul>
+        </div>
+    </div>
+</body>
+</html>"""
+    
+    return html_content
+
+
+def make_archive_index_html(years_with_posts):
+    """Generera arkivöversiktssida"""
+    nav_html = create_nav(active_page='archive', depth=1)
+    
+    years_html = ""
+    for year in sorted(years_with_posts.keys(), reverse=True):
+        post_count = sum(len(posts) for posts in years_with_posts[year].values())
+        years_html += f'<li><a href="{year}/">{year}</a> ({post_count})</li>\n'
+    
+    html_content = f"""<!doctype html>
+<html lang="sv">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="../../css/style.css">
+    <title>Arkiv - {SITE_TITLE}</title>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>{SITE_TITLE}</h1>
+            <p>tankar</p>
+        </div>
+    </header>
+    {nav_html}
+    <div class="grid">
+        <div class="card">
+            <h1>Arkiv - År och månad</h1>
+            <p>Bläddra genom bloggarkivet sorterat efter år och månad. Endast inlägg med taggar (utom "poesi") visas här.</p>
+            <h3>År</h3>
+            <ul>
+                {years_html}
+            </ul>
+        </div>
+    </div>
+</body>
+</html>"""
+    
+    return html_content
+
+
+def build_archive(posts):
+    """Bygga arkiv-struktur: archive/YYYY/MM/index.html"""
+    # Gruppera inlägg efter år/månad, exkludera "poesi"-taggen
+    archive_structure = defaultdict(lambda: defaultdict(list))
+    
+    for post in posts:
+        # Filtrera bort inlägg utan taggar eller endast med "poesi"
+        tags = [t for t in post.get("tags", []) if t.lower() != "poesi"]
+        
+        if not tags:
+            continue  # Hoppa över om inga relevanta taggar
+        
+        date_str = post["date"]
+        if not date_str:
+            continue
+        
+        # Extrahera år och månad
+        try:
+            year, month = date_str[:7].split("-")  # "2026-08"
+            archive_structure[year][month].append(post)
+        except (ValueError, IndexError):
+            continue
+    
+    # Skapa arkivfilerna
+    ARCHIVE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # 1. Arkivöversiktssida
+    archive_index_html = make_archive_index_html(archive_structure)
+    (ARCHIVE_OUTPUT_DIR / 'index.html').write_text(archive_index_html, encoding='utf-8')
+    
+    # 2. År-sidor
+    for year, months in archive_structure.items():
+        year_dir = ARCHIVE_OUTPUT_DIR / year
+        year_dir.mkdir(parents=True, exist_ok=True)
+        
+        year_html = make_archive_year_html(year, months)
+        (year_dir / 'index.html').write_text(year_html, encoding='utf-8')
+        
+        # 3. Månad-sidor
+        for month, month_posts in months.items():
+            month_dir = year_dir / month
+            month_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Sortera inlägg efter datum (nyast först)
+            month_posts_sorted = sorted(month_posts, key=lambda p: p["date"], reverse=True)
+            
+            month_html = make_archive_month_html(month_posts_sorted, year, month)
+            (month_dir / 'index.html').write_text(month_html, encoding='utf-8')
+    
+    print(f"✓ Arkiv byggd med {len(archive_structure)} år")
 
 
 def make_index_html(posts, include_admin_nav=False, per_page=10):
@@ -484,7 +689,7 @@ def rebuild_outputs():
     index_html, pages = make_index_html(posts, include_admin_nav=False, per_page=10)
     Path('output/index.html').write_text(index_html, encoding='utf-8')
     
-    # Generera övriga sidor
+    # Generera övriga index-sidor
     if len(pages) > 1:
         for page_num in range(2, len(pages) + 1):
             page_posts = pages[page_num - 1]
@@ -556,6 +761,9 @@ def rebuild_outputs():
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(post_html, encoding='utf-8')
     
+    # Generera arkiv
+    build_archive(posts)
+    
     # Generera mikroblogg
     micro_posts = load_microblog_posts()
     make_microblog_html(micro_posts)
@@ -582,7 +790,7 @@ def admin_only(f):
 
 
 # ============================================================================
-# ADMIN ROUTES (måste komma EFTER funktionsdefinitioner!)
+# ADMIN ROUTES
 # ============================================================================
 
 @app.route("/")
