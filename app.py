@@ -343,6 +343,7 @@ def get_months_from_posts(posts):
     sorted_months = sorted(months_dict.items(), key=lambda x: x[0], reverse=True)
     return dict(sorted_months)
 
+
 def save_post(title, date, content, tags_str, xml_filename=None):
     if not xml_filename:
         date_part = date.split("T")[0]
@@ -742,9 +743,11 @@ def rebuild_outputs():
     all_tags = set()
     for post in posts:
         all_tags.update(post.get("tags", []))
+    all_tags.discard("poesi") # lista inte poesi i arkivet
     tags = sorted(list(all_tags))
     
-    months = get_months_from_posts(posts)
+    posts_without_poesi = [p for p in posts if "poesi" not in p.get("tags", [])]
+    months = get_months_from_posts(posts_without_poesi) # ta inte med poesi i arkivet
     
     archive_html = render_template("archive.html",
                                    tags=tags,
@@ -757,6 +760,32 @@ def rebuild_outputs():
     archive_dir.mkdir(parents=True, exist_ok=True)
     (archive_dir / 'index.html').write_text(archive_html, encoding='utf-8')
     print("✓ Arkiv regenererat")
+
+    # Generera individuella tag-sidor
+    for tag in tags:
+        tag_slug = tag.replace(" ", "-").lower()
+        filtered_posts = [p for p in posts if tag in p.get("tags", []) and "poesi" not in p.get("tags", [])] # utom poesi
+
+        
+        print(f"Tag: {tag}, Antal posts: {len(filtered_posts)}")
+        if filtered_posts:
+            print(f"Första post: {filtered_posts[0].keys()}")
+
+        tag_html = render_template(
+            "tag_archive.html",
+            tag=tag,
+            posts=filtered_posts,
+            site_title=SITE_TITLE,
+            site_description=SITE_DESCRIPTION,
+            nav_html=create_nav(active_page='tags', depth=2)
+        )
+        
+        tag_dir = Path(f'output/tags/{tag_slug}')
+        tag_dir.mkdir(parents=True, exist_ok=True)
+        (tag_dir / 'index.html').write_text(tag_html, encoding='utf-8')
+
+    print("✓ Tag-sidor regenererade")
+
 
     # Generera RSS-flöden
     generate_rss_feeds(posts)
@@ -1080,6 +1109,36 @@ def archive():
         )
     except Exception as e:
         print(f"Error in archive route: {e}")
+        return f"Error: {str(e)}", 500
+
+@app.route("/tags/<tag_slug>")
+def show_tag(tag_slug):
+    """Visa alla inlägg för en specifik tag"""
+    try:
+        posts = load_posts()
+        
+        # Konvertera slug tillbaka till original tag-namn
+        # (t.ex. "mitt-tag" → "mitt tag")
+        tag_name = tag_slug.replace('-', ' ').title()
+        
+        # Filtrera inlägg som har denna tag
+        filtered_posts = [p for p in posts if tag_name in p.get("tags", [])]
+        
+        if not filtered_posts:
+            return "Ingen inlägg med denna tag", 404
+        
+        nav_html = create_nav(active_page='tags', depth=2)
+        
+        return render_template(
+            "tag_archive.html",
+            tag=tag_name,
+            posts=filtered_posts,
+            nav_html=nav_html,
+            site_title=SITE_TITLE,
+            site_description=SITE_DESCRIPTION
+        )
+    except Exception as e:
+        print(f"Error in show_tag route: {e}")
         return f"Error: {str(e)}", 500
 
 
