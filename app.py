@@ -1417,9 +1417,9 @@ def micro_post():
     '''
 
 
-
 @app.route("/create", methods=["GET", "POST"])
 def create():
+    """Skapa nytt blogginlägg"""
     if request.method == "POST":
         title = request.form.get("title", "").strip()
         date = request.form.get("date", "").strip()
@@ -1428,15 +1428,26 @@ def create():
         
         if title and date and content:
             save_post(title, date, content, tags)
+            rebuild_outputs()  # Uppdatera export efter ny post
             return redirect("/")
-        return "Fel: Alla fält krävs"
+        return render_template("create.html", error="Fel: Alla fält krävs")
     
     default_date = datetime.now().strftime("%Y-%m-%dT%H:%M")
     return render_template("create.html", default_date=default_date)
 
+
 @app.route("/edit/<filename>", methods=["GET", "POST"])
 def edit(filename):
-    xml_file = POSTS_DIR / filename  
+    """Redigera befintligt blogginlägg"""
+    # Validera filnamn (säkerhet mot directory traversal)
+    if ".." in filename or "/" in filename:
+        return "Ogiltigt filnamn", 400
+    
+    xml_file = POSTS_DIR / filename
+    
+    # Verifiera att filen finns
+    if not xml_file.exists():
+        return "Inlägget hittades inte", 404
     
     if request.method == "POST":
         title = request.form.get("title", "").strip()
@@ -1446,10 +1457,11 @@ def edit(filename):
         
         if title and date and content:
             save_post(title, date, content, tags, str(xml_file))
+            rebuild_outputs()  # Uppdatera export efter redigering
             return redirect("/")
-        return "Fel: Alla fält krävs"
+        return render_template("edit.html", post=get_post_by_xml_filename(filename), error="Fel: Alla fält krävs")
     
-    post = get_post_by_xml_filename(filename)  
+    post = get_post_by_xml_filename(filename)
     if not post:
         return "Inlägget hittades inte", 404
     
@@ -1486,12 +1498,11 @@ def export_site():
         <p>Sidan har genererats i mappen <code>output/</code></p>
         <p>
             <a href="/" class="button">← Tillbaka</a>
-            <a href="/export" class="button">Exportera</a>
+            <a href="/export" class="button">Exportera igen</a>
         </p>
     </body>
     </html>
     """
-
 
 
 if __name__ == "__main__":
