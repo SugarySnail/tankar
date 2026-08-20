@@ -1367,8 +1367,93 @@ def index():
     """Hem-sidan med admin-funktioner (localhost)"""
     posts = load_posts()
     generate_rss_feeds(posts)
-    html_content = get_index_page_html(posts, page_num=1, posts_per_page=10, include_admin_nav=True)
-    return html_content
+    return make_index_html(posts, include_admin_nav=True)
+
+
+@app.route("/posts/<filename>")
+def post_page(filename):
+    """Blogginläggen med admin-nav (localhost)"""
+    for post in load_posts():
+        if post["filename"] == filename:
+            return make_post_html(post, include_admin_nav=True)
+    return "Inlägget hittades inte", 404
+
+
+@app.route('/micro-create')
+def micro_create():
+    """Visa formulär för nytt microblogs-inlägg (endast admin)"""
+    return render_template('micro_create.html')
+
+@app.route('/micro-post', methods=['POST'])
+def micro_post():
+    """Spara microblogs-inlägg och exportera (endast admin)"""
+    content = request.form.get('content', '').strip()
+    
+    if not content:
+        return render_template('micro_create.html', error='Inlägget kan inte vara tomt!')
+    
+    save_microblog_post(content)
+    
+    # Regenerera microblogs-sidorna
+    posts = load_microblog_posts()
+    make_microblog_html(posts)
+    
+    return '''
+    <!doctype html>
+    <html lang="sv">
+    <head>
+        <meta charset="utf-8">
+        <title>Publicerat</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
+            a { color: #3A8DD5; }
+        </style>
+    </head>
+    <body>
+        <h1>✓ Publicerat!</h1>
+        <p><a href="/" class="button">← Tillbaka</a></p>
+    </body>
+    </html>
+    '''
+
+
+
+@app.route("/create", methods=["GET", "POST"])
+def create():
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        date = request.form.get("date", "").strip()
+        content = request.form.get("content", "").strip()
+        tags = request.form.get("tags", "").strip()
+        
+        if title and date and content:
+            save_post(title, date, content, tags)
+            return redirect("/")
+        return "Fel: Alla fält krävs"
+    
+    default_date = datetime.now().strftime("%Y-%m-%dT%H:%M")
+    return render_template("create.html", default_date=default_date)
+
+@app.route("/edit/<filename>", methods=["GET", "POST"])
+def edit(filename):
+    xml_file = POSTS_DIR / filename  
+    
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        date = request.form.get("date", "").strip()
+        content = request.form.get("content", "").strip()
+        tags = request.form.get("tags", "").strip()
+        
+        if title and date and content:
+            save_post(title, date, content, tags, str(xml_file))
+            return redirect("/")
+        return "Fel: Alla fält krävs"
+    
+    post = get_post_by_xml_filename(filename)  
+    if not post:
+        return "Inlägget hittades inte", 404
+    
+    return render_template("edit.html", post=post)
 
 
 @app.route("/export")
@@ -1409,6 +1494,7 @@ def export_site():
 
 
 
-
 if __name__ == "__main__":
     app.run(debug=True)
+
+
