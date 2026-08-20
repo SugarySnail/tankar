@@ -140,8 +140,103 @@ def get_months_from_posts(posts):
     sorted_months = dict(sorted(months.items(), reverse=True))
     return sorted_months
 
+def make_rss_page_html(posts):
+    """Generate the RSS page at output/pages/rss.html with links to all feeds."""
+    nav_html = create_nav(active_page='rss', depth=1)
+    
+    # Collect all tags and sort by frequency
+    all_tags = {}
+    for post in posts:
+        for tag in post.get('tags', []):
+            if tag not in all_tags:
+                all_tags[tag] = 0
+            all_tags[tag] += 1
+    
+    sorted_tags = sorted(all_tags.items(), key=lambda x: x[1], reverse=True)
+    
+    # Build tag feed links
+    tag_feeds = ""
+    for tag, count in sorted_tags:
+        tag_slug = slugify(tag)
+        tag_feeds += f'        <li><a href="/rss-{tag_slug}.xml">{tag}</a> ({count})</li>\n'
+    
+    html = f"""<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSS - My Jakobsson</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>My Jakobsson</h1>
+            <p>tankar</p>
+        </div>
+    </header>
+
+    {nav_html}
+
+    <div class="grid">
+        
+        <div class="card">
+        <h2>RSS-flöden</h2>
+        
+        <p>RSS är ett sätt att prenumerera på uppdateringar från mig. Du behöver en RSS-läsare (såsom Feedly, Microsoft Outlook, eller Thunderbird) för att läsa flödena. Att prenumerera är gratis, och jag kan inte spåra vem som prenumerar.</p>
+
+        <h3>Huvudflöde</h3>
+        <ul>
+            <li><a href="/rss.xml">Alla inlägg</a> (utom mikrobloggen)</li>
+        </ul>
+
+        <h3>Flöden per tagg</h3>
+        <ul>
+        {tag_feeds}        </ul>
+
+        <h3>Mikrobloggen</h3>
+        <ul>
+        <a href="/rss-micro.xml">Mikroblogg</a>        </ul>
+
+        <h3>Hur prenumererar jag?</h3>
+        <ol>
+            <li>Installera en RSS-läsare</li>
+            <li>Kopiera länken till ett flöde ovan</li>
+            <li>Lägg till det i din RSS-läsare</li>
+            <li>Du får då automatiska uppdateringar när nya inlägg publiceras</li>
+        </ol>
+    </div></div>
+</body>
+</html>"""
+    
+    output_file = Path('output') / 'pages' / 'rss.html'
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(html, encoding='utf-8')
 
 
+
+def generate_rss_feeds(posts):
+    """Genererar rss.xml (alla inlägg) och rss-ETIKETT.xml för varje etikett"""
+    
+    # Filtrera bort mikrobloggposter - behåll bara reguljära blogginlägg
+    posts = [p for p in posts if not p.get('xml_filename', '').startswith('posts/micro/')]
+    
+    # Applicera bildbehandling på alla inlägg
+    processed_posts = []
+    for post in posts:
+        post_copy = post.copy()
+        post_copy["content"] = process_images_in_content(post_copy.get("content", ""))
+        processed_posts.append(post_copy)
+    
+    all_tags = set()
+    for post in processed_posts:
+        all_tags.update(post.get("tags", []))
+    
+    for tag in all_tags:
+        filtered_posts = [p for p in processed_posts if tag in p.get("tags", [])]
+        create_rss_file(filtered_posts, f"rss-{tag}.xml", tag)
+    
+    create_rss_file(processed_posts, "rss.xml", None)
 
 def parse_post(xml_file):
     try:
