@@ -302,30 +302,31 @@ def paginate_posts(posts, per_page=10):
         pages.append(posts[i:i+per_page])
     return pages
 
-def make_pagination_html(current_page, total_pages, base_url="/"):
+def make_pagination_html(current_page, total_pages, base_url=""):
     """Skapar HTML för sidnavigation (Föregående | Nästa)"""
     html = '<nav class="pagination">\n'
     
     # Föregående-knapp
     if current_page > 1:
         if current_page == 2:
-            prev_url = base_url
+            prev_url = "index.html"
         else:
-            prev_url = f"{base_url}page-{current_page - 1}.html"
-        html += f'  <a href="{prev_url}" class="prev">← Föregående</a>\n'
+            prev_url = f"page-{current_page - 1}.html"
+        html += f' <a href="{prev_url}" class="prev">← Föregående</a>\n'
     
     # Sidnummer
-    html += f'  <span class="page-info">Sida {current_page} av {total_pages}</span>\n'
+    html += f' <span class="page-info">Sida {current_page} av {total_pages}</span>\n'
     
     # Nästa-knapp
     if current_page < total_pages:
-        next_url = f"{base_url}page-{current_page + 1}.html"
-        html += f'  <a href="{next_url}" class="next">Nästa →</a>\n'
+        next_url = f"page-{current_page + 1}.html"
+        html += f' <a href="{next_url}" class="next">Nästa →</a>\n'
     
     html += '</nav>\n'
     return html
 
-def make_paginated_index_html(all_posts, posts_per_page=10):
+
+def make_paginated_index_html(all_posts, posts_per_page=10, include_admin_nav=False):
     """Genererar alla indexsidor med paginering"""
     pages = paginate_posts(all_posts, posts_per_page)
     total_pages = len(pages)
@@ -355,19 +356,38 @@ def make_paginated_index_html(all_posts, posts_per_page=10):
                 tags_html = " ".join(tag_links)
                 tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
             
+            # Admin-knapp för redigering (endast på localhost)
+            edit_button = ""
+            if include_admin_nav:
+                xml_filename = post.get("xml_filename", "")
+                edit_button = f'<a href="/edit/{xml_filename}" style="color:#ff9800; margin-left:10px;">✎ Redigera</a>'
+            
             cards += f"""
 <div class="card">
-<h2><a href="posts/{post['filename']}">{safe_title}</a></h2>
+<h2><a href="posts/{post['filename']}">{safe_title}</a>{edit_button}</h2>
 <p class="date">{safe_date}</p>
 <div>{safe_content}</div>
 {tags_html}
 </div>"""
         
         # Lägg till paginering
-        pagination_html = make_pagination_html(page_num, total_pages, base_url="/")
+        pagination_html = make_pagination_html(page_num, total_pages)
+        
+        # Admin-navigering
+        admin_nav_section = ""
+        if include_admin_nav:
+            admin_nav_section = """
+    <nav class="menu">
+        <a href="/create">Skapa inlägg</a>
+        <a href="/micro-create">Mikroinlägg</a>
+        <a href="/export">Exportera</a>
+    </nav>"""
+        
+        # Vanlig navigering
+        nav_html = create_nav(active_page='home', depth=0)
+        nav_section = admin_nav_section if include_admin_nav else nav_html
         
         # Generera full HTML-sidan
-        nav_html = create_nav(active_page='home', depth=0)
         html_content = f"""<!doctype html>
 <html lang="sv">
 <head>
@@ -383,7 +403,7 @@ def make_paginated_index_html(all_posts, posts_per_page=10):
 <p>{SITE_DESCRIPTION}</p>
 </div>
 </header>
-{nav_html}
+{nav_section}
 <div class="grid">
 {cards}
 </div>
@@ -394,6 +414,7 @@ def make_paginated_index_html(all_posts, posts_per_page=10):
         # Skriv fil
         filepath.write_text(html_content, encoding='utf-8')
         print(f"✓ Genererade {filename}")
+
 
 
 
@@ -676,6 +697,302 @@ def make_rss_page_html(posts):
 
 
 
+def make_archive_index_html(posts):
+    """Genererar huvudarkivsidan som visar alla år"""
+    nav_html = create_nav(active_page='archive', depth=1)
+    
+    # Gruppera inlägg per år
+    posts_by_year = {}
+    for post in posts:
+        year = post["date"].year
+        if year not in posts_by_year:
+            posts_by_year[year] = []
+        posts_by_year[year].append(post)
+    
+    # Sortera år (nyast först)
+    sorted_years = sorted(posts_by_year.keys(), reverse=True)
+    
+    # Bygga år-lista
+    years_html = ""
+    for year in sorted_years:
+        count = len(posts_by_year[year])
+        years_html += f'<li><a href="{year}/index.html">{year}</a> ({count} inlägg)</li>\n'
+    
+    html_content = f"""<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arkiv - My Jakobsson</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<header class="header">
+<div class="header-content">
+<h1>My Jakobsson</h1>
+<p>tankar</p>
+</div>
+</header>
+{nav_html}
+<div class="grid">
+<div class="card">
+<h2>Årarkiv</h2>
+<ul>
+{years_html}</ul>
+</div>
+</div>
+</body>
+</html>"""
+    
+    output_dir = Path('output/archive')
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / 'index.html').write_text(html_content, encoding='utf-8')
+    print(f"✓ Genererade archive/index.html")
+
+
+def make_year_archives(posts):
+    """Genererar årsarkiv (/archive/2024/index.html etc) med pagination"""
+    # Gruppera inlägg per år
+    posts_by_year = {}
+    for post in posts:
+        year = post["date"].year
+        if year not in posts_by_year:
+            posts_by_year[year] = []
+        posts_by_year[year].append(post)
+    
+    # För varje år
+    for year in sorted(posts_by_year.keys(), reverse=True):
+        year_posts = sorted(posts_by_year[year], key=lambda p: p["date"], reverse=True)
+        
+        # Gruppera per månad
+        posts_by_month = {}
+        for post in year_posts:
+            month = post["date"].month
+            if month not in posts_by_month:
+                posts_by_month[month] = []
+            posts_by_month[month].append(post)
+        
+        # Bygga månad-lista
+        month_names = {
+            1: "Januari", 2: "Februari", 3: "Mars", 4: "April",
+            5: "Maj", 6: "Juni", 7: "Juli", 8: "Augusti",
+            9: "September", 10: "Oktober", 11: "November", 12: "December"
+        }
+        
+        months_html = ""
+        for month in sorted(posts_by_month.keys(), reverse=True):
+            month_name = month_names[month]
+            count = len(posts_by_month[month])
+            months_html += f'<li><a href="{month:02d}-{month_name.lower()}/">{month_name}</a> ({count} inlägg)</li>\n'
+        
+        # Pagina året's inlägg
+        pages = paginate_posts(year_posts, per_page=10)
+        total_pages = len(pages)
+        
+        for page_num, page_posts in enumerate(pages, 1):
+            # Bestäm filnamn
+            if page_num == 1:
+                filename = "index.html"
+            else:
+                filename = f"page-{page_num}.html"
+            
+            # Bygga inlägg-kort
+            cards = ""
+            for post in page_posts:
+                safe_title = html.escape(post["title"])
+                safe_date = post["date"].strftime("%Y-%m-%d")
+                safe_content = post["content"]
+                
+                # Taginformation
+                tags_html = ""
+                if post.get("tags"):
+                    tag_links = []
+                    for tag in post["tags"]:
+                        tag_slug = tag.replace(" ", "-").lower()
+                        tag_links.append(f'<a href="../../../tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+                    tags_html = " ".join(tag_links)
+                    tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
+                
+                cards += f"""
+<div class="card">
+<h2><a href="../../../posts/{post['filename']}">{safe_title}</a></h2>
+<p class="date">{safe_date}</p>
+<div>{safe_content}</div>
+{tags_html}
+</div>"""
+            
+            # Paginering (relativsökvägar: ../index.html för föregående, page-N.html för nästa)
+            pagination_html = '<nav class="pagination">\n'
+            if page_num > 1:
+                if page_num == 2:
+                    prev_url = "index.html"
+                else:
+                    prev_url = f"page-{page_num - 1}.html"
+                pagination_html += f' <a href="{prev_url}" class="prev">← Föregående</a>\n'
+            
+            pagination_html += f' <span class="page-info">Sida {page_num} av {total_pages}</span>\n'
+            
+            if page_num < total_pages:
+                next_url = f"page-{page_num + 1}.html"
+                pagination_html += f' <a href="{next_url}" class="next">Nästa →</a>\n'
+            
+            pagination_html += '</nav>\n'
+            
+            # Navigering
+            nav_html = create_nav(active_page='archive', depth=2)
+            
+            # Full HTML
+            html_content = f"""<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arkiv {year} - My Jakobsson</title>
+<link rel="stylesheet" href="../../../css/style.css">
+</head>
+<body>
+<header class="header">
+<div class="header-content">
+<h1>My Jakobsson</h1>
+<p>tankar</p>
+</div>
+</header>
+{nav_html}
+<div class="grid">
+<aside style="grid-column: 1;">
+<div class="card" style="position: sticky; top: 1rem;">
+<h3>År {year}</h3>
+<ul>
+{months_html}</ul>
+<p><a href="../index.html">← Alla år</a></p>
+</div>
+</aside>
+<main style="grid-column: 2;">
+{cards}
+{pagination_html}</main>
+</div>
+</body>
+</html>"""
+            
+            # Skriv fil
+            output_dir = Path(f'output/archive/{year}')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / filename).write_text(html_content, encoding='utf-8')
+            print(f"✓ Genererade archive/{year}/{filename}")
+
+
+def make_month_archives(posts):
+    """Genererar månadsarkiv (/archive/2024/08-augusti/index.html etc) med pagination"""
+    # Gruppera inlägg per år och månad
+    posts_by_year_month = {}
+    for post in posts:
+        year = post["date"].year
+        month = post["date"].month
+        key = (year, month)
+        if key not in posts_by_year_month:
+            posts_by_year_month[key] = []
+        posts_by_year_month[key].append(post)
+    
+    month_names = {
+        1: "januari", 2: "februari", 3: "mars", 4: "april",
+        5: "maj", 6: "juni", 7: "juli", 8: "augusti",
+        9: "september", 10: "oktober", 11: "november", 12: "december"
+    }
+    
+    for (year, month) in sorted(posts_by_year_month.keys(), reverse=True):
+        month_posts = sorted(posts_by_year_month[(year, month)], key=lambda p: p["date"], reverse=True)
+        month_name = month_names[month]
+        
+        # Pagina månadens inlägg
+        pages = paginate_posts(month_posts, per_page=10)
+        total_pages = len(pages)
+        
+        for page_num, page_posts in enumerate(pages, 1):
+            # Bestäm filnamn
+            if page_num == 1:
+                filename = "index.html"
+            else:
+                filename = f"page-{page_num}.html"
+            
+            # Bygga inlägg-kort
+            cards = ""
+            for post in page_posts:
+                safe_title = html.escape(post["title"])
+                safe_date = post["date"].strftime("%Y-%m-%d")
+                safe_content = post["content"]
+                
+                # Taginformation
+                tags_html = ""
+                if post.get("tags"):
+                    tag_links = []
+                    for tag in post["tags"]:
+                        tag_slug = tag.replace(" ", "-").lower()
+                        tag_links.append(f'<a href="../../../../tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+                    tags_html = " ".join(tag_links)
+                    tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
+                
+                cards += f"""
+<div class="card">
+<h2><a href="../../../../posts/{post['filename']}">{safe_title}</a></h2>
+<p class="date">{safe_date}</p>
+<div>{safe_content}</div>
+{tags_html}
+</div>"""
+            
+            # Paginering
+            pagination_html = '<nav class="pagination">\n'
+            if page_num > 1:
+                if page_num == 2:
+                    prev_url = "index.html"
+                else:
+                    prev_url = f"page-{page_num - 1}.html"
+                pagination_html += f' <a href="{prev_url}" class="prev">← Föregående</a>\n'
+            
+            pagination_html += f' <span class="page-info">Sida {page_num} av {total_pages}</span>\n'
+            
+            if page_num < total_pages:
+                next_url = f"page-{page_num + 1}.html"
+                pagination_html += f' <a href="{next_url}" class="next">Nästa →</a>\n'
+            
+            pagination_html += '</nav>\n'
+            
+            # Navigering
+            nav_html = create_nav(active_page='archive', depth=3)
+            
+            # Full HTML
+            html_content = f"""<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{month_name.capitalize()} {year} - My Jakobsson</title>
+<link rel="stylesheet" href="../../../../css/style.css">
+</head>
+<body>
+<header class="header">
+<div class="header-content">
+<h1>My Jakobsson</h1>
+<p>tankar</p>
+</div>
+</header>
+{nav_html}
+<div class="grid">
+<main>
+<h2>{month_name.capitalize()} {year}</h2>
+{cards}
+{pagination_html}</main>
+</div>
+</body>
+</html>"""
+            
+            # Skriv fil
+            output_dir = Path(f'output/archive/{year}/{month:02d}-{month_name}')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / filename).write_text(html_content, encoding='utf-8')
+            print(f"✓ Genererade archive/{year}/{month:02d}-{month_name}/{filename}")
+
+
+
 def make_tag_index_html(post, tag, posts):
     """Generates an HTML index page for a specific tag."""
     nav_html = create_nav(active_page='tags', depth=2)
@@ -875,7 +1192,7 @@ def create_nav(active_page=None, depth=0):
         (f"{prefix}pages/poesi.html", "Poesi", "poesi"),
         (f"{prefix}micro/index.html", "Mikroblogg", "micro"),
         (f"{prefix}pages/faq.html", "FAQ", "faq"),
-        (f"{prefix}tags/index.html", "Arkiv", "tags"),
+        (f"{prefix}archive/index.html", "Arkiv", "archive"),
         (f"{prefix}pages/rss.html", "RSS", "rss"),
         (f"{prefix}pages/om.html", "Om", "om"),
     ]
@@ -992,6 +1309,11 @@ def rebuild_outputs():
     
     # Generera paginerad blogg-index
     make_paginated_index_html(posts, posts_per_page=10)
+
+    # Generera arkiv
+    make_archive_index_html(posts)
+    make_year_archives(posts)
+    make_month_archives(posts)
     
     for post in posts:
         if post:
@@ -1034,93 +1356,7 @@ def index():
     """Hem-sidan med admin-funktioner (localhost)"""
     posts = load_posts()
     generate_rss_feeds(posts)
-    return make_index_html(posts, include_admin_nav=True)
-
-
-@app.route("/posts/<filename>")
-def post_page(filename):
-    """Blogginläggen med admin-nav (localhost)"""
-    for post in load_posts():
-        if post["filename"] == filename:
-            return make_post_html(post, include_admin_nav=True)
-    return "Inlägget hittades inte", 404
-
-
-@app.route('/micro-create')
-def micro_create():
-    """Visa formulär för nytt microblogs-inlägg (endast admin)"""
-    return render_template('micro_create.html')
-
-@app.route('/micro-post', methods=['POST'])
-def micro_post():
-    """Spara microblogs-inlägg och exportera (endast admin)"""
-    content = request.form.get('content', '').strip()
-    
-    if not content:
-        return render_template('micro_create.html', error='Inlägget kan inte vara tomt!')
-    
-    save_microblog_post(content)
-    
-    # Regenerera microblogs-sidorna
-    posts = load_microblog_posts()
-    make_microblog_html(posts)
-    
-    return '''
-    <!doctype html>
-    <html lang="sv">
-    <head>
-        <meta charset="utf-8">
-        <title>Publicerat</title>
-        <style>
-            body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
-            a { color: #3A8DD5; }
-        </style>
-    </head>
-    <body>
-        <h1>✓ Publicerat!</h1>
-        <p><a href="/" class="button">← Tillbaka</a></p>
-    </body>
-    </html>
-    '''
-
-
-
-@app.route("/create", methods=["GET", "POST"])
-def create():
-    if request.method == "POST":
-        title = request.form.get("title", "").strip()
-        date = request.form.get("date", "").strip()
-        content = request.form.get("content", "").strip()
-        tags = request.form.get("tags", "").strip()
-        
-        if title and date and content:
-            save_post(title, date, content, tags)
-            return redirect("/")
-        return "Fel: Alla fält krävs"
-    
-    default_date = datetime.now().strftime("%Y-%m-%dT%H:%M")
-    return render_template("create.html", default_date=default_date)
-
-@app.route("/edit/<filename>", methods=["GET", "POST"])
-def edit(filename):
-    xml_file = POSTS_DIR / filename  
-    
-    if request.method == "POST":
-        title = request.form.get("title", "").strip()
-        date = request.form.get("date", "").strip()
-        content = request.form.get("content", "").strip()
-        tags = request.form.get("tags", "").strip()
-        
-        if title and date and content:
-            save_post(title, date, content, tags, str(xml_file))
-            return redirect("/")
-        return "Fel: Alla fält krävs"
-    
-    post = get_post_by_xml_filename(filename)  
-    if not post:
-        return "Inlägget hittades inte", 404
-    
-    return render_template("edit.html", post=post)
+    return make_paginated_index_html(posts, posts_per_page=10, include_admin_nav=True)
 
 
 @app.route("/export")
@@ -1158,6 +1394,7 @@ def export_site():
     </body>
     </html>
     """
+
 
 
 
