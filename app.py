@@ -107,6 +107,42 @@ def load_posts():
     return posts
 
 
+def get_months_from_posts(posts):
+    """Extrahera unika år/månad från inlägg och organisera dem"""
+    month_names_sv = {
+        "01": "Januari", "02": "Februari", "03": "Mars",
+        "04": "April", "05": "Maj", "06": "Juni",
+        "07": "Juli", "08": "Augusti", "09": "September",
+        "10": "Oktober", "11": "November", "12": "December"
+    }
+    
+    months = {}
+    for post in posts:
+        try:
+            date = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+            year = date.strftime("%Y")
+            month = date.strftime("%m")
+            month_name = month_names_sv[month]
+            key = f"{year}-{month}"
+            
+            if key not in months:
+                months[key] = {
+                    "year": year,
+                    "month": month,
+                    "month_name": month_name,
+                    "posts": []
+                }
+            months[key]["posts"].append(post)
+        except:
+            pass
+    
+    # Sortera efter datum (nyast först)
+    sorted_months = dict(sorted(months.items(), reverse=True))
+    return sorted_months
+
+
+
+
 def parse_post(xml_file):
     try:
         tree = ET.parse(xml_file)
@@ -855,6 +891,27 @@ def paginated_index(page_num):
 </html>"""
     except Exception as e:
         print(f"Error in paginated_index: {e}")
+        return f"Error: {str(e)}", 500
+
+@app.route("/tags")
+def archive():
+    """Arkivsida med tabs för tags och månader"""
+    try:
+        posts = load_posts()
+        tags = sorted(set(tag for post in posts for tag in post.get("tags", [])))
+        months = get_months_from_posts(posts)
+        nav_html = create_nav(active_page='tags', depth=0)
+        
+        return render_template(
+            "archive.html",
+            tags=tags,
+            months=months,
+            nav_html=nav_html,
+            site_title=SITE_TITLE,
+            site_description=SITE_DESCRIPTION
+        )
+    except Exception as e:
+        print(f"Error in archive route: {e}")
         return f"Error: {str(e)}", 500
 
 
