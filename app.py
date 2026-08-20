@@ -203,6 +203,40 @@ def get_post_by_xml_filename(xml_filename):
         return None
 
 
+def get_months_from_posts(posts):
+    """Organisera inlägg efter år och månad (nyast först)"""
+    month_names_sv = {
+        1: "Januari", 2: "Februari", 3: "Mars", 4: "April",
+        5: "Maj", 6: "Juni", 7: "Juli", 8: "Augusti",
+        9: "September", 10: "Oktober", 11: "November", 12: "December"
+    }
+    
+    months_dict = {}
+    for post in posts:
+        try:
+            date_part = post["date"].split("T")[0]  # YYYY-MM-DD
+            year, month, day = date_part.split("-")
+            year = int(year)
+            month = int(month)
+            
+            key = f"{year}-{month:02d}"  # "2024-01"
+            
+            if key not in months_dict:
+                months_dict[key] = {
+                    "year": year,
+                    "month": month,
+                    "month_name": month_names_sv.get(month, ""),
+                    "posts": []
+                }
+            
+            months_dict[key]["posts"].append(post)
+        except:
+            continue
+    
+    # Sortera nyast först
+    sorted_months = sorted(months_dict.items(), key=lambda x: x[0], reverse=True)
+    return dict(sorted_months)
+
 def save_post(title, date, content, tags_str, xml_filename=None):
     if not xml_filename:
         date_part = date.split("T")[0]
@@ -598,6 +632,25 @@ def rebuild_outputs():
     
     print("✓ Regenererade alla inlägg och index")
 
+    # Generera arkiv-sida
+    all_tags = set()
+    for post in posts:
+        all_tags.update(post.get("tags", []))
+    tags = sorted(list(all_tags))
+    
+    months = get_months_from_posts(posts)
+    
+    archive_html = render_template("archive.html",
+                                   tags=tags,
+                                   months=months,
+                                   site_title=SITE_TITLE,
+                                   site_description=SITE_DESCRIPTION,
+                                   nav_html=create_nav(active_page='tags', depth=1))
+    
+    archive_dir = Path('output/tags')
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    (archive_dir / 'index.html').write_text(archive_html, encoding='utf-8')
+    print("✓ Arkiv regenererat")
 
 def generate_rss_feeds(posts):
     """Genererar RSS-feeds"""
@@ -900,7 +953,7 @@ def archive():
         posts = load_posts()
         tags = sorted(set(tag for post in posts for tag in post.get("tags", [])))
         months = get_months_from_posts(posts)
-        nav_html = create_nav(active_page='tags', depth=0)
+        nav_html = create_nav(active_page='tags', depth=1)
         
         return render_template(
             "archive.html",
