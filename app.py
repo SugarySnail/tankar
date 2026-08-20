@@ -325,70 +325,67 @@ def make_pagination_html(current_page, total_pages, base_url=""):
     html += '</nav>\n'
     return html
 
-
-def make_paginated_index_html(all_posts, posts_per_page=10, include_admin_nav=False):
-    """Genererar alla indexsidor med paginering"""
+def get_index_page_html(all_posts, page_num=1, posts_per_page=10, include_admin_nav=False):
+    """Genererar och returnerar HTML för en specifik indexsida (för Flask-routes)"""
     pages = paginate_posts(all_posts, posts_per_page)
     total_pages = len(pages)
     
-    for page_num, page_posts in enumerate(pages, 1):
-        # Bestäm filnamn
-        if page_num == 1:
-            filename = "index.html"
-        else:
-            filename = f"page-{page_num}.html"
-        filepath = OUTPUT_DIR / filename
+    # Validera sidnummer
+    if page_num < 1 or page_num > total_pages:
+        return None
+    
+    page_posts = pages[page_num - 1]
+    
+    # Bygga inlägg-kort
+    cards = ""
+    for post in page_posts:
+        safe_title = html.escape(post["title"])
+        safe_date = post["date"].strftime("%Y-%m-%d")
+        safe_content = post["content"]
         
-        # Bygga inlägg-kortet
-        cards = ""
-        for post in page_posts:
-            safe_title = html.escape(post["title"])
-            safe_date = post["date"].strftime("%Y-%m-%d")
-            safe_content = post["content"]
-            
-            # Skapa taginformation
-            tags_html = ""
-            if post.get("tags"):
-                tag_links = []
-                for tag in post["tags"]:
-                    tag_slug = tag.replace(" ", "-").lower()
-                    tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
-                tags_html = " ".join(tag_links)
-                tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
-            
-            # Admin-knapp för redigering (endast på localhost)
-            edit_button = ""
-            if include_admin_nav:
-                xml_filename = post.get("xml_filename", "")
-                edit_button = f'<a href="/edit/{xml_filename}" style="color:#ff9800; margin-left:10px;">✎ Redigera</a>'
-            
-            cards += f"""
+        # Skapa taginformation
+        tags_html = ""
+        if post.get("tags"):
+            tag_links = []
+            for tag in post["tags"]:
+                tag_slug = tag.replace(" ", "-").lower()
+                tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+            tags_html = " ".join(tag_links)
+            tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
+        
+        # Admin-knapp för redigering (endast på localhost)
+        edit_button = ""
+        if include_admin_nav:
+            xml_filename = post.get("xml_filename", "")
+            edit_button = f'<a href="/edit/{xml_filename}" style="color:#ff9800; margin-left:10px;">✎ Redigera</a>'
+        
+        cards += f"""
 <div class="card">
 <h2><a href="posts/{post['filename']}">{safe_title}</a>{edit_button}</h2>
 <p class="date">{safe_date}</p>
 <div>{safe_content}</div>
 {tags_html}
 </div>"""
-        
-        # Lägg till paginering
-        pagination_html = make_pagination_html(page_num, total_pages)
-        
-        # Admin-navigering
-        admin_nav_section = ""
-        if include_admin_nav:
-            admin_nav_section = """
+    
+    # Lägg till paginering
+    pagination_html = make_pagination_html(page_num, total_pages)
+    
+    # Admin-navigering
+    admin_nav_section = ""
+    if include_admin_nav:
+        admin_nav_section = """
     <nav class="menu">
         <a href="/create">Skapa inlägg</a>
         <a href="/micro-create">Mikroinlägg</a>
         <a href="/export">Exportera</a>
     </nav>"""
-        
-        # Vanlig navigering
-        nav_html = create_nav(active_page='home', depth=0)
-        nav_section = admin_nav_section if include_admin_nav else nav_html
-        
-        # Generera full HTML-sidan
-        html_content = f"""<!doctype html>
+    
+    # Vanlig navigering
+    nav_html = create_nav(active_page='home', depth=0)
+    nav_section = admin_nav_section if include_admin_nav else nav_html
+    
+    # Generera full HTML-sidan
+    html_content = f"""<!doctype html>
 <html lang="sv">
 <head>
 <meta charset="utf-8">
@@ -410,12 +407,26 @@ def make_paginated_index_html(all_posts, posts_per_page=10, include_admin_nav=Fa
 {pagination_html}
 </body>
 </html>"""
+    
+    return html_content
+
+
+def make_paginated_index_html(all_posts, posts_per_page=10):
+    """Genererar alla indexsidor med paginering och sparar till disk"""
+    pages = paginate_posts(all_posts, posts_per_page)
+    total_pages = len(pages)
+    
+    for page_num in range(1, total_pages + 1):
+        html_content = get_index_page_html(all_posts, page_num, posts_per_page, include_admin_nav=False)
         
-        # Skriv fil
+        if page_num == 1:
+            filename = "index.html"
+        else:
+            filename = f"page-{page_num}.html"
+        
+        filepath = OUTPUT_DIR / filename
         filepath.write_text(html_content, encoding='utf-8')
         print(f"✓ Genererade {filename}")
-
-
 
 
 
@@ -1356,7 +1367,8 @@ def index():
     """Hem-sidan med admin-funktioner (localhost)"""
     posts = load_posts()
     generate_rss_feeds(posts)
-    return make_paginated_index_html(posts, posts_per_page=10, include_admin_nav=True)
+    html_content = get_index_page_html(posts, page_num=1, posts_per_page=10, include_admin_nav=True)
+    return html_content
 
 
 @app.route("/export")
