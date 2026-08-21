@@ -30,6 +30,7 @@ SITE_URL = "https://tankar.myjak.net"
 SITE_TITLE = "My Jakobsson"
 SITE_DESCRIPTION = "tankar"
 
+HYVOR_ID = os.environ.get('HYVOR_ID', '15846')
 
 # ============================================================================
 # HJÄLPFUNKTIONER (måste komma före routes!)
@@ -151,20 +152,24 @@ def make_rss_page_html(posts):
         <div class="card">
         <h2>RSS-flöden</h2>
         
-        <p>RSS är ett sätt att prenumerera på uppdateringar från mig. Du behöver en RSS-läsare (såsom Feedly, Microsoft Outlook, eller Thunderbird) för att läsa flödena. Att prenumerera är gratis, och jag kan inte spåra vem som prenumerar.</p>
+        <p>RSS är ett sätt att prenumerera på uppdateringar från mig. Du behöver en RSS-läsare (såsom Feedly, Microsoft Outlook, eller Thunderbird) för att läsa flödena. Att prenumerera är gratis, och jag kan inte spåra vem som prenumerar. RSS-läsare har vanligtvis en fördröjning på alltifrån 20 minuter till en dag på hur ofta de tittar efter om det har uppdaterats något i RSS-filen, så du kommer inte att bli meddelad i samma sekund som jag postar något. </p>
+
+<p>Du kan välja på att prenumerera på alla mina inlägg, utom mikrobloggen, i en enda jätte-RSS, eller att prenumerera på enskilda kategorier:</p>
 
         <h3>Huvudflöde</h3>
         <ul>
             <li><a href="/rss.xml">Alla inlägg</a> (utom mikrobloggen)</li>
         </ul>
 
-        <h3>Flöden per tagg</h3>
-        <ul>
-        {tag_feeds}        </ul>
-
         <h3>Mikrobloggen</h3>
         <ul>
         <a href="/rss-micro.xml">Mikroblogg</a>        </ul>
+
+        <h3>Flöden per kategori</h3>
+        <ul>
+        {tag_feeds}        </ul>
+
+
 
         <h3>Hur prenumererar jag?</h3>
         <ol>
@@ -374,7 +379,7 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     tree = ET.ElementTree(root)
     tree.write(str(xml_filename), encoding="UTF-8", xml_declaration=True)
 
-
+# SKAPA MENYN
 def create_nav(active_page=None, depth=0):
     """Creates navigation menu with relative paths based on depth."""
     prefix = "../" * depth
@@ -384,8 +389,8 @@ def create_nav(active_page=None, depth=0):
         (f"{prefix}pages/poesi.html", "Poesi", "poesi"),
         (f"{prefix}micro/index.html", "Mikroblogg", "micro"),
         (f"{prefix}pages/faq.html", "FAQ", "faq"),
-        (f"{prefix}tags/index.html", "Arkiv", "tags"),
         (f"{prefix}pages/rss.html", "RSS", "rss"),
+        (f"{prefix}tags/index.html", "Arkiv", "tags"),
         (f"{prefix}pages/om.html", "Om", "om"),
     ]
     
@@ -430,7 +435,6 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
                 tag_slug = tag.replace(" ", "-").lower()
                 tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
             tags_html = " ".join(tag_links)
-            tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
 
         if include_admin_nav:
             link = f"/posts/{post['filename']}"
@@ -440,12 +444,19 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
             link = f"posts/{post['filename']}"
             edit_button = ""
         
+        # Kommentera-länk
+        comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a>'
+        
         cards += f"""
         <div class="card">
             <h2><a href="{link}">{safe_title}</a>{edit_button}</h2>
-            <p class="date">{safe_date}</p>
-            <div>{safe_content}</div>
-            {tags_html}
+            <div class="date-tags-wrapper">
+                <span class="date">{safe_date}</span>
+                <div class="tags">{tags_html}</div>
+            </div>
+            <div>{safe_content}</div>            
+            <div style="text-align: left; margin-top: 2rem;">{comment_link}</div>
+            
         </div>"""
     
     # Pagination
@@ -460,7 +471,9 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
         <a href="/export">Exportera</a>
     </nav>"""
     else:
-        nav_section = f"    {nav_html}"
+        nav_section = f"""    <nav class="menu">
+{nav_html}
+    </nav>"""
 
     return f"""<!doctype html>
 <html lang="sv">
@@ -477,7 +490,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
             <p>{SITE_DESCRIPTION}</p>
         </div>
     </header>
-    {nav_section}
+{nav_section}
     <div class="grid">
         {cards}
         {pagination}
@@ -486,55 +499,85 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
 </html>""", pages
 
 
+
+
+
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
     safe_content = process_images_in_content(post["content"])
-    
     try:
         dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
         formatted_date = dt.strftime("%Y-%m-%d %H:%M")
     except:
         formatted_date = post["date"]
-    
     safe_date = html.escape(formatted_date)
-
+    
+    # Generera tags HTML
+    tags_html = ""
+    if post.get("tags"):
+        tag_links = []
+        for tag in post["tags"]:
+            tag_slug = tag.replace(" ", "-").lower()
+            tag_links.append(f'<a href="../tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+        tags_html = " ".join(tag_links)
+    
     nav_html = ""
     if include_admin_nav:
         xml_filename = post.get("xml_filename", "")
-        nav_html = f"""    <a href="/">Hem</a>
-    <a href="/create">Skapa inlägg</a>
-    <a href="/export">Exportera</a>
-    <a href="/edit/{xml_filename}" style="color:#ff9800;">✎ Redigera</a>"""
+        nav_html = f""" <a href="/">Hem</a>
+<a href="/create">Skapa inlägg</a>
+<a href="/export">Exportera</a>
+<a href="/edit/{xml_filename}" style="color:#ff9800;">✎ Redigera</a>"""
     else:
         nav_html = create_nav(active_page='posts', depth=1)
-
+    
+    # Unik identifierare för varje inlägg (använd filnamnet som ID)
+    post_id = post['filename'].replace('.html', '').replace('-', '_')
+    
     return f"""<!doctype html>
 <html lang="sv">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="../css/style.css">
-    <title>{safe_title} - {SITE_TITLE}</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../css/style.css">
+<title>{safe_title} - {SITE_TITLE}</title>
 </head>
 <body>
-    <header class="header">
-        <div class="header-content">
-            <h1>{SITE_TITLE}</h1>
-        </div>
-    </header>
-    <nav class="menu">
-        {nav_html}
-    </nav>
-    <div class="grid">
-        <article class="card">
-            <h2>{safe_title}</h2>
-            <p class="date">{safe_date}</p>
-            <div>{safe_content}</div>
-            <p><a href="../index.html">← Tillbaka till startsidan</a></p>
-        </article>
-    </div>
+<header class="header">
+<div class="header-content">
+<h1>{SITE_TITLE}</h1>
+</div>
+</header>
+<nav class="menu">
+{nav_html}
+</nav>
+<div class="grid">
+<article class="card">
+<h2>{safe_title}</h2>
+<div class="date-tags-wrapper">
+    <span class="date">{safe_date}</span>
+    <div class="tags">{tags_html}</div>
+</div>
+<div>{safe_content}</div>
+
+<p><a href="../index.html">← Tillbaka till startsidan</a></p>
+
+<!-- Hyvor Comments -->
+<div id="kommentarer"><hyvor-talk-comments
+	website-id="{HYVOR_ID}"
+	page-id="{post_id}"
+></hyvor-talk-comments>
+<script async src="https://talk.hyvor.com/embed/embed.js" type="module"></script></div>
+
+
+</article>
+</div>
+
+
 </body>
 </html>"""
+
+
 
 
 def load_microblog_posts():
@@ -653,6 +696,112 @@ def make_microblog_html(posts):
     print("✓ Mikroblogg regenererad med pagination")
 
 
+def make_poesi_html():
+       """Generate the page at output/pages/poesi.html."""
+       nav_html = create_nav(active_page='poesi', depth=1)
+       html_content = f"""<!DOCTYPE html>
+   <html lang="sv">
+   <head>
+       <meta charset="UTF-8">
+       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+       <title>Poesi | My Jakobsson</title>
+       <link rel="stylesheet" href="../css/style.css">
+   </head>
+   <body>
+       <header class="header">
+           <div class="header-content">
+               <h1>My Jakobsson</h1>
+               <p>tankar</p>
+           </div>
+       </header>
+       {nav_html}
+       <main>
+        <div class="grid">      
+            <div class="card">
+               <h2>Poesi</h2>
+               <p>Min fullständiga samling med poesi finns på <a href="https://poesi.myjak.net">https://poesi.myjak.net</a>.</p>
+<p>Endast ny poesi läggs ut här i bloggen, i syfte att det ska gå att prenumerera på den <a href="https://tankar.myjak.net/rss-poesi.xml">via RSS</a> (<a href="rss.html">info</a>). <b>Eventuella korrigeringar och omarbetningar av mina dikter publiceras enbart på sidan ovan,</b> så om du vill citera mig, använd helst den sidan som källa för att säkerställa att du har den senaste versionen av dikten.</p><p>Tack!</p>
+           </div>
+          </div>
+       </main>
+   </body>
+   </html>"""
+       output_dir = Path('output/pages')
+       output_dir.mkdir(parents=True, exist_ok=True)
+       (output_dir / 'poesi.html').write_text(html_content, encoding='utf-8')
+
+def make_om_html():
+       """Generate the page at output/pages/om.html."""
+       nav_html = create_nav(active_page='om', depth=1)
+       html_content = f"""<!DOCTYPE html>
+   <html lang="sv">
+   <head>
+       <meta charset="UTF-8">
+       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+       <title>Kontakt | My Jakobsson</title>
+       <link rel="stylesheet" href="../css/style.css">
+   </head>
+   <body>
+       <header class="header">
+           <div class="header-content">
+               <h1>My Jakobsson</h1>
+               <p>tankar</p>
+           </div>
+       </header>
+       {nav_html}
+       <main>
+        <div class="grid">      
+            <div class="card">
+               <h2>Kontakt</h2>
+               <p>E-post: <a href="mailto:kontakt@myjak.net">kontakt@myjak.net</a></p>
+
+                <h2>Om webbplatsen</h2>
+                <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Designvalet handlar om en romantisering av Mys svunna ungdom, då internet var ungt, oskuldsfullt och fyllt av möjligheter. Tecknade bilden överst i mikrobloggen är genererad av GPT 5.4 AI. </p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My. Copyright råder, men det förstår ni. Ni är vuxna människor!
+           </div>
+          </div>
+       </main>
+   </body>
+   </html>"""
+       output_dir = Path('output/pages')
+       output_dir.mkdir(parents=True, exist_ok=True)
+       (output_dir / 'om.html').write_text(html_content, encoding='utf-8')
+
+def make_faq_html():
+    """Generate the FAQ page."""
+    nav_html = create_nav(active_page='faq', depth=1)
+    faq_content = (Path('templates') / 'faq.html').read_text(encoding='utf-8')
+    
+    html_content = f"""<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ – My Jakobsson</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>{SITE_TITLE}</h1>
+            <p>{SITE_DESCRIPTION}</p>
+        </div>
+    </header>
+    
+    {nav_html}
+    
+    <div class="grid">
+        <div class="card">
+            {faq_content}
+        </div>
+    </div>
+</body>
+</html>"""
+    
+    output_file = Path('output') / 'pages' / 'faq.html'
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(html_content, encoding='utf-8')
+
+
 def extract_excerpt(post_content, words=50):
     """Extraherar första N ord från post-innehål med proper HTML-hantering"""
     from html.parser import HTMLParser
@@ -742,7 +891,7 @@ def rebuild_outputs():
                         tag_slug = tag.replace(" ", "-").lower()
                         tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
                     tags_html = " ".join(tag_links)
-                    tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
+                    tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
                 
                 cards += f"""
         <div class="card">
@@ -828,7 +977,7 @@ def rebuild_outputs():
         # Lägg till excerpts till varje inlägg (använd post['content'] direkt)
         for post in filtered_posts:
             try:
-                post['excerpt'] = extract_excerpt(html.unescape(post.get('content', '')), words=100)
+                post['excerpt'] = extract_excerpt(html.unescape(post.get('content', '')), words=50)
             except Exception as e:
                 print(f"  Varning: Kunde inte skapa excerpt för {post['filename']}: {e}")
                 post['excerpt'] = ""
@@ -838,7 +987,7 @@ def rebuild_outputs():
         print(f"  Tag: {tag}, Slug: {tag_slug}, Inlägg: {len(filtered_posts)}")
         
         if filtered_posts:
-            print(f"  Första post: {filtered_posts[0]}")
+            print(f"  Första post skrivs ")
         
         try:
             tag_html = render_template("tag_archive.html", 
@@ -863,6 +1012,15 @@ def rebuild_outputs():
 
     print("✓ Tag-sidor klara")
 
+    # Generera FAQ-sida
+    make_faq_html() 
+
+    # Generera poesisida
+    make_poesi_html() 
+
+    # Generera om (kontaktsida)
+    make_om_html() 
+
     # Generera RSS-flöden
     generate_rss_feeds(posts)
     
@@ -874,9 +1032,6 @@ def rebuild_outputs():
 
 
 
-def generate_rss_feeds(posts):
-    """Genererar RSS-feeds"""
-    print("✓ RSS-feeds uppdaterad")
 
 
 # ============================================================================
@@ -1130,7 +1285,7 @@ def paginated_index(page_num):
                     tag_slug = tag.replace(" ", "-").lower()
                     tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
                 tags_html = " ".join(tag_links)
-                tags_html = f'<div class="tags" style="text-align: right; margin-top: 1rem;">{tags_html}</div>'
+                tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
             
             cards += f"""
         <div class="card">
