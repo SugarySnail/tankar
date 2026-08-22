@@ -152,9 +152,9 @@ def make_rss_page_html(posts):
         <div class="card">
         <h2>RSS-flöden</h2>
         
-        <p>RSS är ett sätt att prenumerera på uppdateringar från mig. Du behöver en RSS-läsare (såsom Feedly, Microsoft Outlook, eller Thunderbird) för att läsa flödena. Att prenumerera är gratis, och jag kan inte spåra vem som prenumerar. RSS-läsare har vanligtvis en fördröjning på alltifrån 20 minuter till en dag på hur ofta de tittar efter om det har uppdaterats något i RSS-filen, så du kommer inte att bli meddelad i samma sekund som jag postar något. </p>
+        <p>RSS är ett sätt att prenumerera på uppdateringar från mig. Du behöver en RSS-läsare (såsom Feedly, Microsoft Outlook, eller Thunderbird) för att läsa flödena. Att prenumerera är gratis, och jag kan inte spåra vem som prenumerar. RSS-läsare har vanligtvis en fördröjning på alltifrån 20 minuter till en dag på hur ofta de tittar efter uppdateringar, så du kommer inte att bli meddelad i samma sekund som jag postar något. </p>
 
-<p>Du kan välja på att prenumerera på alla mina inlägg, utom mikrobloggen, i en enda jätte-RSS, eller att prenumerera på enskilda kategorier:</p>
+<p>Du kan välja på att prenumerera på alla mina inlägg i en enda jätte-RSS (mikrobloggen exkluderad), eller att prenumerera på enskilda kategorier:</p>
 
         <h3>Huvudflöde</h3>
         <ul>
@@ -356,28 +356,34 @@ def save_post(title, date, content, tags_str, xml_filename=None):
         xml_filename = POSTS_DIR / f"{date_part}-{slug}.xml"
     else:
         xml_filename = Path(xml_filename)
-
-    content = content.replace('="', '="')  
-    content = content.replace('">', '">')  
-
-    if not content.startswith('<p>'):
-        content = f'<p>{content}'
-    if not content.endswith('</p>'):
-        content = f'{content}</p>'
+    
+    content = content.replace('="', '="')
+    content = content.replace('">', '">')
+    
+    # Kontrollera om innehållet redan är omslaget av block-element
+    has_block_element = (any(content.strip().startswith(f'<{tag}') 
+                            for tag in ['div', 'p', 'article', 'section', 'blockquote']) or
+                        any(content.strip().endswith(f'</{tag}>') 
+                            for tag in ['div', 'p', 'article', 'section', 'blockquote']))
+    
+    if not has_block_element:
+        if not content.startswith('<p>'):
+            content = f'<p>{content}'
+        if not content.endswith('</p>'):
+            content = f'{content}</p>'
     
     tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
-
     root = ET.Element("post")
     ET.SubElement(root, "title").text = title
     ET.SubElement(root, "date").text = date
     ET.SubElement(root, "content").text = content
-    
     tags_elem = ET.SubElement(root, "tags")
     for tag in tags:
         ET.SubElement(tags_elem, "tag").text = tag
-    
     tree = ET.ElementTree(root)
     tree.write(str(xml_filename), encoding="UTF-8", xml_declaration=True)
+
+
 
 # SKAPA MENYN
 def create_nav(active_page=None, depth=0):
@@ -452,10 +458,13 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
             <h2><a href="{link}">{safe_title}</a>{edit_button}</h2>
             <div class="date-tags-wrapper">
                 <span class="date">{safe_date}</span>
-                <div class="tags">{tags_html}</div>
             </div>
             <div>{safe_content}</div>            
-            <div style="text-align: left; margin-top: 2rem;">{comment_link}</div>
+            <div class="comment-tags-wrapper">
+                <div class="comment-link">{comment_link}</div>
+                <div class="tags">{tags_html}</div>
+            </div>
+
             
         </div>"""
     
@@ -502,6 +511,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
 
 
 
+
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
     safe_content = process_images_in_content(post["content"])
@@ -511,15 +521,6 @@ def make_post_html(post, include_admin_nav=False):
     except:
         formatted_date = post["date"]
     safe_date = html.escape(formatted_date)
-    
-    # Generera tags HTML
-    tags_html = ""
-    if post.get("tags"):
-        tag_links = []
-        for tag in post["tags"]:
-            tag_slug = tag.replace(" ", "-").lower()
-            tag_links.append(f'<a href="../tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
-        tags_html = " ".join(tag_links)
     
     nav_html = ""
     if include_admin_nav:
@@ -533,6 +534,15 @@ def make_post_html(post, include_admin_nav=False):
     
     # Unik identifierare för varje inlägg (använd filnamnet som ID)
     post_id = post['filename'].replace('.html', '').replace('-', '_')
+    
+    # Generera tagg-HTML
+    tags_html = ""
+    if post.get("tags"):
+        tag_links = []
+        for tag in post["tags"]:
+            tag_slug = tag.replace(" ", "-").lower()
+            tag_links.append(f'<a href="../tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+        tags_html = " ".join(tag_links)
     
     return f"""<!doctype html>
 <html lang="sv">
@@ -556,9 +566,12 @@ def make_post_html(post, include_admin_nav=False):
 <h2>{safe_title}</h2>
 <div class="date-tags-wrapper">
     <span class="date">{safe_date}</span>
-    <div class="tags">{tags_html}</div>
 </div>
 <div>{safe_content}</div>
+
+<div class="comment-tags-wrapper">
+    <div class="tags">{tags_html}</div>
+</div>
 
 <p><a href="../index.html">← Tillbaka till startsidan</a></p>
 
@@ -569,10 +582,8 @@ def make_post_html(post, include_admin_nav=False):
 ></hyvor-talk-comments>
 <script async src="https://talk.hyvor.com/embed/embed.js" type="module"></script></div>
 
-
 </article>
 </div>
-
 
 </body>
 </html>"""
