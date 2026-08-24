@@ -53,8 +53,21 @@ def escape_xml(text):
         .replace("'", '&apos;'))
 
 
-def process_images_in_content(content):
-    """Konverterar <img>-taggar från gamla attribut till moderna CSS-baserade."""
+def process_images_in_content(content, tags_str=""):
+    """Processar bilder och lägger till semantiska taggar baserat på innehållstyp"""
+
+    # Kontrollera om inlägget har taggen "poesi"
+    tags_list = [tag.strip().lower() for tag in tags_str.split(',')]
+    is_poetry = 'poesi' in tags_list
+    
+    # Om det är poesi och inte redan wrapped, lägg till poem-div
+    if is_poetry and not content.strip().startswith('<div role="doc-poem"'):
+        content = f'<div role="doc-poem" class="poem-line">{content}</div>'
+    # Annars, om det inte börjar med HTML-tag, lägg till <p>
+    elif not is_poetry and not content.strip().startswith('<'):
+        content = f'<p>{content}</p>'
+    
+    # Processa bilder med responsiv CSS
     def replace_img(match):
         img_tag = match.group(0)
         src_match = re.search(r'src=["\']([^"\']+)["\']', img_tag)
@@ -63,7 +76,10 @@ def process_images_in_content(content):
         src = src_match.group(1)
         return f'<img src="{src}" style="max-width: 100%; height: auto; display: block; margin: 1rem 0;">'
     
-    return re.sub(r'<img[^>]*/?>', replace_img, content)
+    content = re.sub(r'<img[^>]*/?>', replace_img, content)
+    
+    return content
+
 
 
 def process_content_for_rss(content):
@@ -391,8 +407,9 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     else:
         xml_filename = Path(xml_filename)
     
-    content = content.replace('="', '="')
-    content = content.replace('">', '">')
+    content = content.replace('=”', '="')
+    content = content.replace('”>', '">')
+
     
     # Kontrollera om innehållet redan är omslaget av block-element
     has_block_element = (any(content.strip().startswith(f'<{tag}') 
