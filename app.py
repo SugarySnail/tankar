@@ -66,6 +66,41 @@ def process_images_in_content(content):
     return re.sub(r'<img[^>]*/?>', replace_img, content)
 
 
+def process_content_for_rss(content):
+    """Konverterar poesi-divs med bevarade radbrytningar till RSS-format"""
+    
+    # Extrahera allt innehål från poem-line divs och konvertera radbrytningar till <br/>
+    def convert_poem_div(match):
+        inner_content = match.group(1)
+        # Konvertera varje radbrytning inom divet till <br/>
+        inner_content = inner_content.replace('\n', '<br/>')
+        # Ta bort ledande/släpande whitespace per rad
+        inner_content = re.sub(r'<br/>(\s+)', '<br/>', inner_content)
+        inner_content = re.sub(r'(\s+)<br/>', '<br/>', inner_content)
+        return inner_content + '<br/>'
+    
+    content = re.sub(
+        r'<div\s+role=["\']doc-poem["\']\s+class=["\']poem-line["\']\s*>(.*?)</div>',
+        convert_poem_div,
+        content,
+        flags=re.IGNORECASE | re.DOTALL
+    )
+    
+    # Processa bilder
+    def replace_img(match):
+        img_tag = match.group(0)
+        src_match = re.search(r'src=["\']([^"\']+)["\']', img_tag)
+        if not src_match:
+            return img_tag
+        src = src_match.group(1)
+        return f'<img src="{src}" style="max-width: 100%; height: auto; display: block; margin: 1rem 0;">'
+    
+    content = re.sub(r'<img[^>]*/?>', replace_img, content)
+    
+    return content
+
+
+
 def paginate_posts(posts, per_page=10):
     """Delar upp inlägg i sidor. Returnerar lista av listor."""
     pages = []
@@ -202,33 +237,31 @@ def create_rss_file(posts, filename, tag=None):
     """Skapar en RSS-fil för de givna inläggen"""
     rss = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
-    <channel>
-        <title>{escape_xml(SITE_TITLE)}{f' - {tag}' if tag else ''}</title>
-        <link>{SITE_URL}</link>
-        <description>{escape_xml(SITE_DESCRIPTION)}</description>
-        <language>sv</language>
+<channel>
+<title>{escape_xml(SITE_TITLE)}{f' - {tag}' if tag else ''}</title>
+<link>{SITE_URL}</link>
+<description>{escape_xml(SITE_DESCRIPTION)}</description>
+<language>sv</language>
 """
-    
     for post in posts:
-        content_processed = process_images_in_content(post.get("content", ""))
+        # Använd den nya funktionen för RSS-innehål
+        content_processed = process_content_for_rss(post.get("content", ""))
         date_obj = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
         rss_date = date_obj.strftime("%a, %d %b %Y %H:%M:%S +0000")
         post_url = f"{SITE_URL}/posts/{post['filename']}"
-        
-        rss += f"""        <item>
-            <title>{escape_xml(post['title'])}</title>
-            <link>{post_url}</link>
-            <pubDate>{rss_date}</pubDate>
-            <description>{escape_xml(post['content'][:300])}</description>
-            <content:encoded><![CDATA[{content_processed}]]></content:encoded>
-        </item>
+        rss += f""" <item>
+<title>{escape_xml(post['title'])}</title>
+<link>{post_url}</link>
+<pubDate>{rss_date}</pubDate>
+<description>{escape_xml(post['content'][:300])}</description>
+<content:encoded><![CDATA[{content_processed}]]></content:encoded>
+</item>
 """
-    
-    rss += """    </channel>
+    rss += """ </channel>
 </rss>"""
-    
     output_file = Path('output') / filename
     output_file.write_text(rss, encoding='utf-8')
+
 
 def generate_rss_feeds(posts):
     """Genererar rss.xml (alla inlägg) och rss-ETIKETT.xml för varje etikett"""
@@ -236,11 +269,11 @@ def generate_rss_feeds(posts):
     # Filtrera bort mikrobloggposter - behåll bara reguljära blogginlägg
     posts = [p for p in posts if not p.get('xml_filename', '').startswith('posts/micro/')]
     
-    # Applicera bildbehandling på alla inlägg
+    # Applicera RSS-formatering på alla inlägg
     processed_posts = []
     for post in posts:
         post_copy = post.copy()
-        post_copy["content"] = process_images_in_content(post_copy.get("content", ""))
+        post_copy["content"] = process_content_for_rss(post_copy.get("content", ""))
         processed_posts.append(post_copy)
     
     all_tags = set()
@@ -252,6 +285,7 @@ def generate_rss_feeds(posts):
         create_rss_file(filtered_posts, f"rss-{tag}.xml", tag)
     
     create_rss_file(processed_posts, "rss.xml", None)
+
 
 
 def parse_post(xml_file):
@@ -767,7 +801,37 @@ def make_om_html():
                <p>E-post: <a href="mailto:kontakt@myjak.net">kontakt@myjak.net</a></p>
 
                 <h2>Om webbplatsen</h2>
-                <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Designvalet handlar om en romantisering av Mys svunna ungdom, då internet var ungt, oskuldsfullt och fyllt av möjligheter. Tecknade bilden överst i mikrobloggen är genererad av GPT 5.4 AI. </p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My. Copyright råder, men det förstår ni. Ni är vuxna människor!
+                <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Designvalet handlar om en romantisering av Mys svunna ungdom, då internet var ungt, oskuldsfullt och fyllt av möjligheter. Tecknade bilden överst i mikrobloggen är genererad av GPT 5.4 AI. </p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My. <b>Copyright råder</b>, men det förstår ni. Ni är vuxna människor!
+
+<h3>Under utveckling</h3>
+<ul>
+  <li>Tillgänglighetsanpassning
+    <ul>
+      <li>Webbplatsen behöver ses över som helhet</li>
+      <li>Poesiarkivet ska formateras så att skärmläsare begriper att det är poesi.
+        <ul>
+          <li>All ny poesi som publiceras är bättre formaterad, men bakåt i tiden så ser (hör?) det illa ut. Jag ska se över det hela, men det är ett jätteprojekt...</li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+  <li>Permalänkar till mikrobloggen
+    <ul>
+      <li>... och med dem också möjlighet att kommentera på enskilda inlägg</li>
+    </ul>
+  </li>
+  <li>En favicon till tankar.myjak.net också.</li>
+  <li>Implementera sökmotor?
+    <ul>
+      <li>Jag vill minnas att poesiarkivet avsiktligt inte indexeras av sökmotorer just nu, så då är det väl trevligt om jag erbjuder något alternativ. Dock så fungerar "ctrl+f" utmärkt för mig ;)</li>
+    </ul>
+  </li>
+  <li>Utvidga FAQn</li>
+</ul>
+
+
+
+
            </div>
           </div>
        </main>
