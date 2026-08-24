@@ -112,6 +112,9 @@ def process_content_for_rss(content):
         return f'<img src="{src}" style="max-width: 100%; height: auto; display: block; margin: 1rem 0;">'
     
     content = re.sub(r'<img[^>]*/?>', replace_img, content)
+
+    # Konvertera manuellt skrivna <br> till XML-standard <br/>, men skippa redan korrekta <br/>
+    content = re.sub(r'<br(?!/)>', '<br/>', content, flags=re.IGNORECASE)
     
     return content
 
@@ -410,6 +413,7 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     content = content.replace('=”', '="')
     content = content.replace('”>', '">')
 
+    content = process_images_in_content(content, tags_str)
     
     # Kontrollera om innehållet redan är omslaget av block-element
     has_block_element = (any(content.strip().startswith(f'<{tag}') 
@@ -565,7 +569,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
 
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
-    safe_content = process_images_in_content(post["content"])
+    safe_content = process_images_in_content(post["content"], post["tags_str"])
     try:
         dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
         formatted_date = dt.strftime("%Y-%m-%d %H:%M")
