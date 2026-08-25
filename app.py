@@ -832,6 +832,7 @@ def make_om_html():
       <li>Poesiarkivet ska formateras så att skärmläsare begriper att det är poesi.
         <ul>
           <li>All ny poesi som publiceras är bättre formaterad, men bakåt i tiden så ser (hör?) det illa ut. Jag ska se över det hela, men det är ett jätteprojekt...</li>
+          <li>Registret behöver också göras om från radbyten till en faktiskt lista. (Stackars skärmläsare...)
         </ul>
       </li>
     </ul>
@@ -841,7 +842,18 @@ def make_om_html():
       <li>... och med dem också möjlighet att kommentera på enskilda inlägg</li>
     </ul>
   </li>
+  <li>Diskussionsforum för poesi
+    <ul>
+      <li>Just nu så går det bara att diskutera nypublicerad poesi, och den finns inte i något lättillgängligt arkiv heller för de inläggen som har den möjligheten, så också den nya poesin är svårdiskuterad. Vore kul med en diskussionsyta anpassad för besökare att kunna lyfta fram dikter och bolla tankar runt dem. Det kommer antagligen att växa till ett generellt poesiforum där man kan lägga ut och bolla runt sina egna dikter. (Freaksen visar mig nu denna webbplats som en framtida, svensk poesicentral, som alternativ till befintliga sådana ytor.)</li>
+    </ul>
+  </li>
   <li>En favicon till tankar.myjak.net också.</li>
+  <li>Buggfixar
+     <ul>
+        <li>I arkivet tas mellanslag bort före och efter länkar inuti poster</li>
+        <li>Färgen på "Nästa"- och "Tillbaka"-knapparna är hiskelig på mobil...</li>
+      </ul>
+     </li>
   <li>Implementera sökmotor?
     <ul>
       <li>Jag vill minnas att poesiarkivet avsiktligt inte indexeras av sökmotorer just nu, så då är det väl trevligt om jag erbjuder något alternativ. Dock så fungerar "ctrl+f" utmärkt för mig ;)</li>
