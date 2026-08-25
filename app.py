@@ -644,6 +644,46 @@ def make_post_html(post, include_admin_nav=False):
 </html>"""
 
 
+def generate_rss_micro(posts):
+    """Generera RSS-feed för mikrobloggen"""
+    rss = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>{html.escape(SITE_TITLE)} - Mikroblogg</title>
+<link>{SITE_URL}/micro/</link>
+<description>Mikroblogg från {html.escape(SITE_TITLE)}</description>
+<language>sv</language>
+"""
+    
+    for idx, post in enumerate(posts):
+        post_number = len(posts) - idx
+        timestamp = post['timestamp']
+        
+        # Konvertera timestamp till RSS-format
+        try:
+            dt = datetime.fromisoformat(timestamp)
+            rss_date = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
+        except:
+            rss_date = timestamp
+        
+        content = html.escape(post['content'])
+        
+        rss += f"""<item>
+<title>Mikroinlägg #{post_number}</title>
+<link>{SITE_URL}/micro/#{post_number}</link>
+<pubDate>{rss_date}</pubDate>
+<description>{content}</description>
+<content:encoded><![CDATA[{post['content']}]]></content:encoded>
+</item>
+"""
+    
+    rss += """</channel>
+</rss>"""
+    
+    output_file = Path('output') / 'rss-micro.xml'
+    output_file.write_text(rss, encoding='utf-8')
+    print("✓ RSS-feed för mikroblogg genererad")
+
 
 
 def load_microblog_posts():
@@ -1048,6 +1088,7 @@ def rebuild_outputs():
     # Generera mikroblogg
     micro_posts = load_microblog_posts()
     make_microblog_html(micro_posts)
+    generate_rss_micro(micro_posts) 
     
     print("✓ Regenererade alla inlägg och index")
 
