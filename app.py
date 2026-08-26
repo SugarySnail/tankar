@@ -649,6 +649,8 @@ def make_post_html(post, include_admin_nav=False):
 
 def generate_rss_micro(posts):
     """Generera RSS-feed för mikrobloggen"""
+    from datetime import datetime
+    
     rss = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
 <channel>
@@ -662,18 +664,25 @@ def generate_rss_micro(posts):
         post_number = len(posts) - idx
         timestamp = post['timestamp']
         
-        # Konvertera timestamp till RSS-format
+        # Konvertera timestamp till RSS-format och extrahera år/månad
         try:
             dt = datetime.fromisoformat(timestamp)
             rss_date = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
+            year = dt.strftime("%Y")
+            month = dt.strftime("%m")
         except:
             rss_date = timestamp
+            year = "0000"
+            month = "00"
         
         content = html.escape(post['content'])
         
+        # Länk till den nya permalänk-strukturen
+        permalink = f"{SITE_URL}/micro/{year}/{month}/micro-{post_number}.html"
+        
         rss += f"""<item>
 <title>Mikroinlägg #{post_number}</title>
-<link>{SITE_URL}/micro/#{post_number}</link>
+<link>{permalink}</link>
 <pubDate>{rss_date}</pubDate>
 <description>{content}</description>
 <content:encoded><![CDATA[{post['content']}]]></content:encoded>
@@ -686,6 +695,7 @@ def generate_rss_micro(posts):
     output_file = Path('output') / 'rss-micro.xml'
     output_file.write_text(rss, encoding='utf-8')
     print("✓ RSS-feed för mikroblogg genererad")
+
 
 
 
@@ -732,11 +742,12 @@ def save_microblog_post(content):
 
 def make_microblog_html(posts):
     """Generera microblogs-sidor med pagination"""
+    from datetime import datetime
+    
     MICRO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     # Dela upp i sidor
     total_pages = (len(posts) + MICRO_PER_PAGE - 1) // MICRO_PER_PAGE
-    
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * MICRO_PER_PAGE
         end_idx = start_idx + MICRO_PER_PAGE
@@ -746,52 +757,56 @@ def make_microblog_html(posts):
         posts_html = ''
         for idx, post in enumerate(page_posts):
             post_number = len(posts) - start_idx - idx
+            
+            # Extrahera år och månad för permalink
+            date_obj = datetime.fromisoformat(post['timestamp'])
+            year = date_obj.strftime("%Y")
+            month = date_obj.strftime("%m")
+            
             posts_html += f'''<div class="micro-post">
-            <div class="micro-content">{post['content']}</div>
-            <div class="micro-footer">
-                <span class="micro-time">{post['timestamp'][:16].replace('T', ' ')}</span>
-                <span class="micro-number">#{post_number}</span>
-            </div>
-            </div>
-            '''
+<div class="micro-content">{post['content']}</div>
+<div class="micro-footer">
+    <span class="micro-time">{post['timestamp'][:16].replace('T', ' ')}</span>
+    <span class="micro-number"><a href="{year}/{month}/micro-{post_number}.html">#{post_number}</a></span>
+</div>
+</div>
+'''
         
         # Pagination
         pagination_html = make_pagination_html(page_num, total_pages) if total_pages > 1 else ''
-        
         nav_html = create_nav(active_page='micro', depth=1)
-        
         html_content = f'''<!DOCTYPE html>
 <html lang="sv">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mikroblogg - My Jakobsson</title>
-    <link rel="stylesheet" href="../css/style.css">
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mikroblogg - My Jakobsson</title>
+<link rel="stylesheet" href="../css/style.css">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
 </head>
 <body>
-    <header class="header">
-        <div class="header-content">
-            <h1>My Jakobsson</h1>
-            <p>tankar</p>
-        </div>
-    </header>
-    {nav_html}
-    <main>
-        <div class="grid">
-            <div class="card">
-                <h2>Mikroblogg</h2>
-                <div style="display: flex; gap: 1rem; align-items: top;">
-                    <img src="../bilder/static/mythinking.jpg" alt="Lekfull teckning av My med en fundersam min och stora glasögon, klädd i en mysig hoodie" style="width: 130px; height: 130px; flex-shrink: 0; border-radius: 8px;">
-                    <div>
-                        <p>Prenumerera <a href="/rss-micro.xml">via RSS</a>.</p>
-                    </div>
-                </div>
-                {posts_html}
-                {pagination_html}
-            </div>
-        </div>
-    </main>
+<header class="header">
+<div class="header-content">
+<h1>My Jakobsson</h1>
+<p>tankar</p>
+</div>
+</header>
+{nav_html}
+<main>
+<div class="grid">
+<div class="card">
+<h2>Mikroblogg</h2>
+<div style="display: flex; gap: 1rem; align-items: top;">
+<img src="../bilder/static/mythinking.jpg" alt="Lekfull teckning av My med en fundersam min och stora glasögon, klädd i en mysig hoodie" style="width: 130px; height: 130px; flex-shrink: 0; border-radius: 8px;">
+<div>
+<p>Prenumerera <a href="/rss-micro.xml">via RSS</a>.</p>
+</div>
+</div>
+{posts_html}
+{pagination_html}
+</div>
+</div>
+</main>
 </body>
 </html>'''
         
@@ -800,10 +815,83 @@ def make_microblog_html(posts):
             output_file = MICRO_OUTPUT_DIR / 'index.html'
         else:
             output_file = MICRO_OUTPUT_DIR / f'page-{page_num}.html'
-        
         output_file.write_text(html_content, encoding='utf-8')
     
     print("✓ Mikroblogg regenererad med pagination")
+
+
+
+
+def make_microblog_post_html(post, post_number):
+    """Generera en permalänk-sida för ett enskilt mikroblog-inlägg"""
+    # Extrahera år och månad från timestamp
+    timestamp = post['timestamp']
+    date_obj = datetime.fromisoformat(timestamp)
+    year = date_obj.strftime("%Y")
+    month = date_obj.strftime("%m")
+    
+    MICRO_POST_DIR = Path(f'output/micro/{year}/{month}')
+    MICRO_POST_DIR.mkdir(parents=True, exist_ok=True)
+    
+    safe_content = html.escape(post['content'])
+    post_id = f"micro_{post_number}"
+    
+    nav_html = create_nav(active_page='micro', depth=3)  # 3 nivåer djupt
+    
+    html_content = f'''<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mikroinlägg #{post_number} - My Jakobsson</title>
+<link rel="stylesheet" href="../../../css/style.css">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+</head>
+<body>
+<header class="header">
+<div class="header-content">
+<h1>My Jakobsson</h1>
+<p>tankar</p>
+</div>
+</header>
+{nav_html}
+<div class="grid">
+<article class="card">
+<h2>Mikroinlägg #{post_number}</h2>
+<div class="date-tags-wrapper">
+<span class="date">{timestamp[:16].replace('T', ' ')}</span>
+</div>
+<div>{post['content']}</div>
+<p><a href="../../index.html">← Tillbaka till mikrobloggen</a></p>
+<!-- Hyvor Comments -->
+<div id="kommentarer">
+<hyvor-talk-comments
+website-id="{HYVOR_ID}"
+page-id="{post_id}"
+></hyvor-talk-comments>
+<script async src="https://talk.hyvor.com/embed/embed.js" type="module"></script>
+</div>
+</article>
+</div>
+</body>
+</html>'''
+    
+    output_file = MICRO_POST_DIR / f'micro-{post_number}.html'
+    output_file.write_text(html_content, encoding='utf-8')
+
+
+
+
+def generate_all_microblog_pages(posts):
+    """Generera både listan och alla permalänkar"""
+    make_microblog_html(posts)  # Generera listan
+    
+    # Generera permalänkar för varje inlägg
+    for idx, post in enumerate(posts):
+        post_number = len(posts) - idx
+        make_microblog_post_html(post, post_number)
+    
+    print(f"✓ Genererade {len(posts)} permalänk-sidor för mikrobloggen")
 
 
 def make_poesi_html():
@@ -1089,7 +1177,7 @@ def rebuild_outputs():
     
     # Generera mikroblogg
     micro_posts = load_microblog_posts()
-    make_microblog_html(micro_posts)
+    generate_all_microblog_pages(micro_posts)
     generate_rss_micro(micro_posts) 
     
     print("✓ Regenererade alla inlägg och index")
