@@ -189,6 +189,7 @@ def make_rss_page_html(posts):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RSS - My Jakobsson</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -490,7 +491,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
         safe_content = post["content"]
         
         tags_html = ""
-        if post.get("tags"):
+        if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
             tag_links = []
             for tag in post["tags"]:
                 tag_slug = tag.replace(" ", "-").lower()
@@ -545,6 +546,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <title>{SITE_TITLE}</title>
 </head>
 <body>
@@ -592,7 +594,7 @@ def make_post_html(post, include_admin_nav=False):
     
     # Generera tagg-HTML
     tags_html = ""
-    if post.get("tags"):
+    if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
         tag_links = []
         for tag in post["tags"]:
             tag_slug = tag.replace(" ", "-").lower()
@@ -605,6 +607,7 @@ def make_post_html(post, include_admin_nav=False):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="../css/style.css">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
 <title>{safe_title} - {SITE_TITLE}</title>
 </head>
 <body>
@@ -764,6 +767,7 @@ def make_microblog_html(posts):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mikroblogg - My Jakobsson</title>
     <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
 </head>
 <body>
     <header class="header">
@@ -812,6 +816,7 @@ def make_poesi_html():
        <meta name="viewport" content="width=device-width, initial-scale=1.0">
        <title>Poesi | My Jakobsson</title>
        <link rel="stylesheet" href="../css/style.css">
+       <link rel="icon" type="image/x-icon" href="/favicon.ico">
    </head>
    <body>
        <header class="header">
@@ -846,6 +851,7 @@ def make_om_html():
        <meta name="viewport" content="width=device-width, initial-scale=1.0">
        <title>Kontakt | My Jakobsson</title>
        <link rel="stylesheet" href="../css/style.css">
+       <link rel="icon" type="image/x-icon" href="/favicon.ico">
    </head>
    <body>
        <header class="header">
@@ -869,12 +875,6 @@ def make_om_html():
   <li>Tillgänglighetsanpassning
     <ul>
       <li>Webbplatsen behöver ses över som helhet</li>
-      <li>Poesiarkivet ska formateras så att skärmläsare begriper att det är poesi.
-        <ul>
-          <li>All ny poesi som publiceras är bättre formaterad, men bakåt i tiden så ser (hör?) det illa ut. Jag ska se över det hela, men det är ett jätteprojekt...</li>
-          <li>Registret behöver också göras om från radbyten till en faktiskt lista. (Stackars skärmläsare...)
-        </ul>
-      </li>
     </ul>
   </li>
   <li>Permalänkar till mikrobloggen
@@ -887,11 +887,11 @@ def make_om_html():
       <li>Just nu så går det bara att diskutera nypublicerad poesi, och den finns inte i något lättillgängligt arkiv heller för de inläggen som har den möjligheten, så också den nya poesin är svårdiskuterad. Vore kul med en diskussionsyta anpassad för besökare att kunna lyfta fram dikter och bolla tankar runt dem. Det kommer antagligen att växa till ett generellt poesiforum där man kan lägga ut och bolla runt sina egna dikter. (Freaksen visar mig nu denna webbplats som en framtida, svensk poesicentral, som alternativ till befintliga sådana ytor.)</li>
     </ul>
   </li>
-  <li>En favicon till tankar.myjak.net också.</li>
   <li>Buggfixar
      <ul>
         <li>I arkivet tas mellanslag bort före och efter länkar inuti poster</li>
         <li>Färgen på "Nästa"- och "Tillbaka"-knapparna är hiskelig på mobil...</li>
+        <li>Ta en titt på om det går att generera kortare RSS-filer.</li>
       </ul>
      </li>
   <li>Implementera sökmotor?
@@ -926,6 +926,7 @@ def make_faq_html():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FAQ – My Jakobsson</title>
     <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
 </head>
 <body>
     <header class="header">
@@ -1058,6 +1059,7 @@ def rebuild_outputs():
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <title>{SITE_TITLE}</title>
 </head>
 <body>
@@ -1452,6 +1454,7 @@ def paginated_index(page_num):
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <title>{SITE_TITLE}</title>
 </head>
 <body>
