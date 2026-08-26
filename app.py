@@ -282,9 +282,14 @@ def create_rss_file(posts, filename, tag=None):
     output_file = Path('output') / filename
     output_file.write_text(rss, encoding='utf-8')
 
+    # Loggning
+    tag_label = f" ({tag})" if tag else ""
+    print(f"✓ RSS-feed {filename} genererad ({len(posts)} inlägg){tag_label}")
 
 def generate_rss_feeds(posts):
-    """Genererar rss.xml (alla inlägg) och rss-ETIKETT.xml för varje etikett"""
+    """Genererar rss.xml (max 30 senaste inlägg) och rss-ETIKETT.xml för varje etikett (max 30 per etikett)"""
+    
+    MAX_RSS_ITEMS = 30
     
     # Filtrera bort mikrobloggposter - behåll bara reguljära blogginlägg
     posts = [p for p in posts if not p.get('xml_filename', '').startswith('posts/micro/')]
@@ -300,11 +305,16 @@ def generate_rss_feeds(posts):
     for post in processed_posts:
         all_tags.update(post.get("tags", []))
     
+    # Generera RSS per etikett (max 30 per etikett)
     for tag in all_tags:
         filtered_posts = [p for p in processed_posts if tag in p.get("tags", [])]
-        create_rss_file(filtered_posts, f"rss-{tag}.xml", tag)
+        limited_posts = filtered_posts[:MAX_RSS_ITEMS]
+        create_rss_file(limited_posts, f"rss-{tag}.xml", tag)
     
-    create_rss_file(processed_posts, "rss.xml", None)
+    # Generera huvudsaklig RSS (max 30 senaste inlägg)
+    limited_main_posts = processed_posts[:MAX_RSS_ITEMS]
+    create_rss_file(limited_main_posts, "rss.xml", None)
+
 
 
 
@@ -648,8 +658,12 @@ def make_post_html(post, include_admin_nav=False):
 
 
 def generate_rss_micro(posts):
-    """Generera RSS-feed för mikrobloggen"""
+    """Generera RSS-feed för mikrobloggen (max 30 senaste inlägg)"""
     from datetime import datetime
+    
+    # Begränsa till 30 senaste inlägg
+    MAX_RSS_ITEMS = 30
+    limited_posts = posts[:MAX_RSS_ITEMS]
     
     rss = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
@@ -660,8 +674,8 @@ def generate_rss_micro(posts):
 <language>sv</language>
 """
     
-    for idx, post in enumerate(posts):
-        post_number = len(posts) - idx
+    for idx, post in enumerate(limited_posts):
+        post_number = len(posts) - idx  # Använd totalt antal för korrekt numbering
         timestamp = post['timestamp']
         
         # Konvertera timestamp till RSS-format och extrahera år/månad
@@ -676,8 +690,6 @@ def generate_rss_micro(posts):
             month = "00"
         
         content = html.escape(post['content'])
-        
-        # Länk till den nya permalänk-strukturen
         permalink = f"{SITE_URL}/micro/{year}/{month}/micro-{post_number}.html"
         
         rss += f"""<item>
@@ -694,7 +706,8 @@ def generate_rss_micro(posts):
     
     output_file = Path('output') / 'rss-micro.xml'
     output_file.write_text(rss, encoding='utf-8')
-    print("✓ RSS-feed för mikroblogg genererad")
+    print(f"✓ RSS-feed för mikroblogg genererad ({len(limited_posts)} inlägg)")
+
 
 
 
@@ -963,11 +976,6 @@ def make_om_html():
   <li>Tillgänglighetsanpassning
     <ul>
       <li>Webbplatsen behöver ses över som helhet</li>
-    </ul>
-  </li>
-  <li>Permalänkar till mikrobloggen
-    <ul>
-      <li>... och med dem också möjlighet att kommentera på enskilda inlägg</li>
     </ul>
   </li>
   <li>Diskussionsforum för poesi
