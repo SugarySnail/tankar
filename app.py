@@ -19,8 +19,9 @@ POSTS_DIR = BASE_DIR / "posts"
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_POSTS_DIR = OUTPUT_DIR / "posts"
 
-MICRO_DIR = Path('posts/micro')
-MICRO_OUTPUT_DIR = Path('output/micro')
+MICRO_DIR = BASE_DIR / "posts" / "micro"
+MICRO_OUTPUT_DIR = BASE_DIR / "output" / "micro"
+
 MICRO_PER_PAGE = 30
 
 POSTS_DIR.mkdir(exist_ok=True)
@@ -584,6 +585,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
     <nav class="menu">
         <a href="/create">Skapa inlägg</a>
         <a href="/micro-create">Mikroinlägg</a>
+        <a href="/micro/admin">Admin</a>
         <a href="/export">Exportera</a>
     </nav>"""
     else:
@@ -1490,16 +1492,26 @@ def micro_edit(post_id):
                                        post=post,
                                        error='Inlägget är för långt (max 5000 tecken)'), 400
             
-            # Uppdatera innehål och datum
-            posts[post_index]['content'] = new_content
-            posts[post_index]['date'] = datetime.now().strftime('%Y-%m-%d %H:%M')
-            
-            # Spara uppdaterad JSON
-            posts_file = 'data/microblog_posts.json'
-            with open(posts_file, 'w', encoding='utf-8') as f:
-                json.dump(posts, f, ensure_ascii=False, indent=2)
+            # Uppdatera XML-filen
+            xml_file = MICRO_DIR / f"{post_id}.xml"
+            if xml_file.exists():
+                tree = ET.parse(xml_file)
+                root = tree.getroot()
+                
+                # Uppdatera innehål och datum
+                content_elem = root.find('content')
+                timestamp_elem = root.find('timestamp')
+                
+                if content_elem is not None:
+                    content_elem.text = new_content
+                if timestamp_elem is not None:
+                    timestamp_elem.text = datetime.now().strftime('%Y-%m-%d %H:%M')
+                
+                # Spara uppdaterad XML
+                tree.write(xml_file, encoding='utf-8', xml_declaration=True)
             
             # Regenerera sidor
+            posts = load_microblog_posts()
             make_microblog_html(posts)
             generate_all_microblog_pages(posts)
             generate_rss_micro(posts)
@@ -1518,52 +1530,33 @@ def micro_edit(post_id):
                                error=f'Fel vid redigering: {str(e)}'), 500
 
 
+
 @app.route('/micro/delete/<post_id>', methods=['POST'])
 def micro_delete(post_id):
     """Ta bort ett mikroinlägg"""
     try:
-        posts = load_microblog_posts()
-        
-        # Hitta och ta bort inlägget
-        post_to_delete = None
-        new_posts = []
-        
-        for p in posts:
-            if p.get('id') == post_id:
-                post_to_delete = p
-            else:
-                new_posts.append(p)
-        
-        if post_to_delete is None:
-            return render_template('micro_create.html', 
-                                   error='Inlägget hittades inte!'), 404
-        
-        # Spara uppdaterad JSON
-        posts_file = 'data/microblog_posts.json'
-        with open(posts_file, 'w', encoding='utf-8') as f:
-            json.dump(new_posts, f, ensure_ascii=False, indent=2)
-        
-        # Ta bort individuell HTML-fil om den finns
-        if post_to_delete.get('filename'):
-            permalink_path = f'output/micro/{post_to_delete["filename"]}'
-            if os.path.exists(permalink_path):
-                os.remove(permalink_path)
+        # Ta bort XML-filen
+        xml_file = MICRO_DIR / f"{post_id}.xml"
+        if xml_file.exists():
+            xml_file.unlink()
         
         # Regenerera sidor
-        make_microblog_html(new_posts)
-        generate_all_microblog_pages(new_posts)
-        generate_rss_micro(new_posts)
+        posts = load_microblog_posts()
+        make_microblog_html(posts)
+        generate_all_microblog_pages(posts)
+        generate_rss_micro(posts)
         
-        recent_posts = new_posts[:5]
+        recent_posts = posts[:5]
         return render_template('micro_published.html',
                                recent_posts=recent_posts,
-                               count=len(new_posts),
+                               count=len(posts),
                                message='Inlägget har tagits bort!')
     
     except Exception as e:
         print(f"Error in micro_delete: {e}")
         return render_template('micro_create.html', 
                                error=f'Fel vid borttagning: {str(e)}'), 500
+
 
 @app.route('/micro/admin')
 def micro_admin():
