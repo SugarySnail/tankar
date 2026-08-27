@@ -762,21 +762,21 @@ def load_microblog_posts():
     """Ladda alla microblogs sorterade från nyast till äldst"""
     if not MICRO_DIR.exists():
         return []
-    
     posts = []
     for xml_file in sorted(MICRO_DIR.glob('*.xml'), reverse=True):
         try:
             tree = ET.parse(xml_file)
             root = tree.getroot()
             posts.append({
+                'id': xml_file.stem,  # ← NYTT: Filnamnet utan extension (t.ex. "2026-08-27-185357")
                 'timestamp': root.find('timestamp').text,
                 'content': root.find('content').text,
                 'filename': xml_file.name
             })
         except Exception as e:
             print(f"Fel vid läsning av {xml_file}: {e}")
-    
     return posts
+
 
 
 def save_microblog_post(content):
