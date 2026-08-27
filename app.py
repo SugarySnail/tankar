@@ -465,28 +465,46 @@ def save_post(title, date, content, tags_str, xml_filename=None):
 
 
 
-# SKAPA MENYN
 def create_nav(active_page=None, depth=0):
-    """Creates navigation menu with relative paths based on depth."""
+    """Creates navigation menu with dropdown for additional items."""
     prefix = "../" * depth
     
-    nav_items = [
+    main_nav_items = [
         (f"{prefix}index.html", "Hem", "home"),
         (f"{prefix}pages/poesi.html", "Poesi", "poesi"),
         (f"{prefix}micro/index.html", "Mikroblogg", "micro"),
+    ]
+    
+    dropdown_items = [
+        (f"{prefix}pages/forum.html", "Forum", "forum"),
+        (f"{prefix}tags/index.html", "Arkiv", "tags"),
         (f"{prefix}pages/faq.html", "FAQ", "faq"),
         (f"{prefix}pages/rss.html", "RSS", "rss"),
-        (f"{prefix}tags/index.html", "Arkiv", "tags"),
         (f"{prefix}pages/om.html", "Om", "om"),
     ]
     
     nav_html = '<nav class="menu">\n'
-    for href, label, page_key in nav_items:
+    
+    # Huvudmenyobjekt
+    for href, label, page_key in main_nav_items:
         active_class = ' class="active"' if active_page == page_key else ''
         nav_html += f'    <a href="{href}"{active_class}>{label}</a>\n'
+    
+    # Dropdown-meny
+    nav_html += '    <div class="dropdown">\n'
+    nav_html += '        <button class="dropdown-toggle">Mer...</button>\n'
+    nav_html += '        <div class="dropdown-menu">\n'
+    
+    for href, label, page_key in dropdown_items:
+        active_class = ' class="active"' if active_page == page_key else ''
+        nav_html += f'            <a href="{href}"{active_class}>{label}</a>\n'
+    
+    nav_html += '        </div>\n'
+    nav_html += '    </div>\n'
     nav_html += '</nav>'
     
     return nav_html
+
 
 
 def make_index_html(posts, include_admin_nav=False, per_page=10):
@@ -1009,7 +1027,6 @@ def make_om_html():
   <li>Buggfixar
      <ul>
         <li>I arkivet tas mellanslag bort före och efter länkar inuti poster</li>
-        <li>Färgen på "Nästa"- och "Tillbaka"-knapparna är hiskelig på mobil...</li>
       </ul>
      </li>
 </ul>
@@ -1025,6 +1042,43 @@ def make_om_html():
        output_dir = Path('output/pages')
        output_dir.mkdir(parents=True, exist_ok=True)
        (output_dir / 'om.html').write_text(html_content, encoding='utf-8')
+
+def make_forum_html():
+       """Generate the page at output/pages/forum.html."""
+       nav_html = create_nav(active_page='forum', depth=1)
+       html_content = f"""<!DOCTYPE html>
+   <html lang="sv">
+   <head>
+       <meta charset="UTF-8">
+       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+       <title>Forum | My Jakobsson</title>
+       <link rel="stylesheet" href="../css/style.css">
+       <link rel="icon" type="image/x-icon" href="/favicon.ico">
+   </head>
+   <body>
+       <header class="header">
+           <div class="header-content">
+               <h1>My Jakobsson</h1>
+               <p>tankar</p>
+           </div>
+       </header>
+       {nav_html}
+       <main>
+        <div class="grid">      
+            <div class="card">
+               <h2>Forum</h2>
+               <p>Jag tillhandahåller ett diskussionsforum på <a href="https://myjak.flarum.cloud/">https://myjak.flarum.cloud/</a>
+</p><p><b>Syftet är att bistå med en yta för längre diskussioner av mitt innehåll och ämnen relaterade till sånt som jag yrar om.</b></p><p>Det finns redan möjlighet att kommentera på enskilda inlägg här på tankar.myjak.net, men jag känner att forumformatet kan vara bra om man vill föra längre och mer komplexa diskussioner.</p><p>Ha så skoj!</p>
+
+
+           </div>
+          </div>
+       </main>
+   </body>
+   </html>"""
+       output_dir = Path('output/pages')
+       output_dir.mkdir(parents=True, exist_ok=True)
+       (output_dir / 'forum.html').write_text(html_content, encoding='utf-8')
 
 def make_faq_html():
     """Generate the FAQ page."""
@@ -1301,6 +1355,9 @@ def rebuild_outputs():
     # Generera poesisida
     make_poesi_html() 
 
+    # Generera forumsida
+    make_forum_html() 
+
     # Generera om (kontaktsida)
     make_om_html() 
 
@@ -1386,29 +1443,138 @@ def micro_post():
         
         posts = load_microblog_posts()
         make_microblog_html(posts)
+        generate_all_microblog_pages(posts)
+        generate_rss_micro(posts)
         
-        return '''
-        <!doctype html>
-        <html lang="sv">
-        <head>
-            <meta charset="utf-8">
-            <title>Publicerat</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
-                a { color: #3A8DD5; }
-            </style>
-        </head>
-        <body>
-            <h1>✓ Publicerat!</h1>
-            <p><a href="/">← Tillbaka</a></p>
-        </body>
-        </html>
-        '''
+        # Hämta de 5 senaste inläggen för visning
+        recent_posts = posts[:3]  # Antag att posts är sorterad med nyast först
+        
+        return render_template('micro_published.html',
+                               recent_posts=recent_posts,
+                               count=len(posts))
     except Exception as e:
         print(f"Error in micro_post: {e}")
         return render_template('micro_create.html', 
                                error=f'Fel vid sparning: {str(e)}'), 500
 
+
+@app.route('/micro/edit/<post_id>', methods=['GET', 'POST'])
+def micro_edit(post_id):
+    """Redigera ett befintligt mikroinlägg"""
+    try:
+        posts = load_microblog_posts()
+        
+        # Hitta inlägget
+        post = None
+        post_index = None
+        for idx, p in enumerate(posts):
+            if p.get('id') == post_id:
+                post = p
+                post_index = idx
+                break
+        
+        if post is None:
+            return render_template('micro_create.html', 
+                                   error='Inlägget hittades inte!'), 404
+        
+        if request.method == 'POST':
+            new_content = request.form.get('content', '').strip()
+            
+            if not new_content:
+                return render_template('micro_edit.html',
+                                       post=post,
+                                       error='Inlägget kan inte vara tomt!'), 400
+            
+            if len(new_content) > 5000:
+                return render_template('micro_edit.html',
+                                       post=post,
+                                       error='Inlägget är för långt (max 5000 tecken)'), 400
+            
+            # Uppdatera innehål och datum
+            posts[post_index]['content'] = new_content
+            posts[post_index]['date'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+            
+            # Spara uppdaterad JSON
+            posts_file = 'data/microblog_posts.json'
+            with open(posts_file, 'w', encoding='utf-8') as f:
+                json.dump(posts, f, ensure_ascii=False, indent=2)
+            
+            # Regenerera sidor
+            make_microblog_html(posts)
+            generate_all_microblog_pages(posts)
+            generate_rss_micro(posts)
+            
+            recent_posts = posts[:5]
+            return render_template('micro_published.html',
+                                   recent_posts=recent_posts,
+                                   count=len(posts),
+                                   message='Inlägget har uppdaterats!')
+        
+        return render_template('micro_edit.html', post=post)
+    
+    except Exception as e:
+        print(f"Error in micro_edit: {e}")
+        return render_template('micro_create.html', 
+                               error=f'Fel vid redigering: {str(e)}'), 500
+
+
+@app.route('/micro/delete/<post_id>', methods=['POST'])
+def micro_delete(post_id):
+    """Ta bort ett mikroinlägg"""
+    try:
+        posts = load_microblog_posts()
+        
+        # Hitta och ta bort inlägget
+        post_to_delete = None
+        new_posts = []
+        
+        for p in posts:
+            if p.get('id') == post_id:
+                post_to_delete = p
+            else:
+                new_posts.append(p)
+        
+        if post_to_delete is None:
+            return render_template('micro_create.html', 
+                                   error='Inlägget hittades inte!'), 404
+        
+        # Spara uppdaterad JSON
+        posts_file = 'data/microblog_posts.json'
+        with open(posts_file, 'w', encoding='utf-8') as f:
+            json.dump(new_posts, f, ensure_ascii=False, indent=2)
+        
+        # Ta bort individuell HTML-fil om den finns
+        if post_to_delete.get('filename'):
+            permalink_path = f'output/micro/{post_to_delete["filename"]}'
+            if os.path.exists(permalink_path):
+                os.remove(permalink_path)
+        
+        # Regenerera sidor
+        make_microblog_html(new_posts)
+        generate_all_microblog_pages(new_posts)
+        generate_rss_micro(new_posts)
+        
+        recent_posts = new_posts[:5]
+        return render_template('micro_published.html',
+                               recent_posts=recent_posts,
+                               count=len(new_posts),
+                               message='Inlägget har tagits bort!')
+    
+    except Exception as e:
+        print(f"Error in micro_delete: {e}")
+        return render_template('micro_create.html', 
+                               error=f'Fel vid borttagning: {str(e)}'), 500
+
+@app.route('/micro/admin')
+def micro_admin():
+    """Admin-sida för att se och hantera alla mikroinlägg"""
+    try:
+        posts = load_microblog_posts()
+        return render_template('micro_admin.html', posts=posts, count=len(posts))
+    except Exception as e:
+        print(f"Error in micro_admin: {e}")
+        return render_template('micro_create.html', 
+                               error=f'Fel vid hämtning av inlägg: {str(e)}'), 500
 
 @app.route("/create", methods=["GET", "POST"])
 @admin_only
