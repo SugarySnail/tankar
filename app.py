@@ -294,6 +294,7 @@ def create_rss_file(posts, filename, tag=None):
     print(f"✓ RSS-feed {filename} genererad ({len(posts)} inlägg){tag_label}")
 
 
+
 def generate_rss_feeds(posts):
     """Genererar rss.xml (max 30 senaste inlägg) och rss-ETIKETT.xml för varje etikett (max 30 per etikett)"""
     
@@ -406,11 +407,15 @@ def get_months_from_posts(posts):
             
             if key not in months_dict:
                 months_dict[key] = {
-                    "year": year,
-                    "month": month,
+                    "year": str(year),           # ← ÄNDRAT: konvertera till string för konsistens
+                    "month": f"{month:02d}",    # ← ÄNDRAT: formatera som "01", "02", osv
                     "month_name": month_names_sv.get(month, ""),
                     "posts": []
                 }
+            
+            # ← ÄNDRAT: sätt även year och month på varje post för template-användning
+            post["year"] = str(year)
+            post["month"] = f"{month:02d}"
             
             months_dict[key]["posts"].append(post)
         except:
@@ -419,6 +424,7 @@ def get_months_from_posts(posts):
     # Sortera nyast först
     sorted_months = sorted(months_dict.items(), key=lambda x: x[0], reverse=True)
     return dict(sorted_months)
+
 
 
 def save_post(title, date, content, tags_str, xml_filename=None):
@@ -516,12 +522,21 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
                 tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
             tags_html = " ".join(tag_links)
 
+        # Extrahera år och månad för ny länkstruktur
+        try:
+            dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+            year = dt.strftime("%Y")
+            month = dt.strftime("%m")
+        except:
+            year = "0000"
+            month = "00"
+
         if include_admin_nav:
-            link = f"/posts/{post['filename']}"
+            link = f"/posts/{year}/{month}/{post['filename']}"
             xml_filename = post.get("xml_filename", "")
             edit_button = f'<a href="/edit/{xml_filename}" style="color:#ff9800; margin-left:10px;">✎ Redigera</a>'
         else:
-            link = f"posts/{post['filename']}"
+            link = f"posts/{year}/{month}/{post['filename']}"
             edit_button = ""
         
         # Kommentera-länk
@@ -584,6 +599,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
 
 
 
+
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
     safe_content = process_images_in_content(post["content"], post["tags_str"])
@@ -607,12 +623,12 @@ def make_post_html(post, include_admin_nav=False):
 <a href="/export">Exportera</a>
 <a href="/edit/{xml_filename}" style="color:#ff9800;">✎ Redigera</a>"""
     else:
-        nav_html = create_nav(active_page='posts', depth=3)  # Depth 3 för posts/YYYY/MM/
+        nav_html = create_nav(active_page='posts', depth=3)  # 3 nivåer: posts/YYYY/MM/
     
-    # Unik identifierare för varje inlägg (använd filnamnet som ID)
+    # Unik identifierare för varje inlägg
     post_id = post['filename'].replace('.html', '').replace('-', '_')
     
-    # Generera tagg-HTML (uppdatera sökväg för tags)
+    # Generera tagg-HTML (uppdatera sökväg för tags från ../tags/ till ../../tags/)
     tags_html = ""
     if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
         tag_links = []
@@ -626,7 +642,7 @@ def make_post_html(post, include_admin_nav=False):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="../../css/style.css">
+<link rel="stylesheet" href="../../../css/style.css">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <title>{safe_title} - {SITE_TITLE}</title>
 </head>
@@ -651,7 +667,7 @@ def make_post_html(post, include_admin_nav=False):
     <div class="tags">{tags_html}</div>
 </div>
 
-<p><a href="../../index.html">← Tillbaka till startsidan</a></p>
+<p><a href="../../../index.html">← Tillbaka till startsidan</a></p>
 
 <!-- Hyvor Comments -->
 <div id="kommentarer"><hyvor-talk-comments
@@ -665,6 +681,7 @@ def make_post_html(post, include_admin_nav=False):
 
 </body>
 </html>"""
+
 
 
 
@@ -1249,7 +1266,6 @@ def rebuild_outputs():
                 post['month'] = "00"
                 post['excerpt'] = ""
         
-        months = get_months_from_posts(filtered_posts)
         
         print(f"  Tag: {tag}, Slug: {tag_slug}, Inlägg: {len(filtered_posts)}")
         
@@ -1589,11 +1605,26 @@ def paginated_index(page_num):
         print(f"Error in paginated_index: {e}")
         return f"Error: {str(e)}", 500
 
+
+def _extract_year_month(posts):
+    """Hjälpfunktion för att extrahera år och månad från posts"""
+    for post in posts:
+        try:
+            dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+            post["year"] = dt.strftime("%Y")
+            post["month"] = dt.strftime("%m")
+        except:
+            post["year"] = "0000"
+            post["month"] = "00"
+
+
 @app.route("/tags")
 def archive():
     """Arkivsida med tabs för tags och månader"""
     try:
         posts = load_posts()
+        _extract_year_month(posts)
+        
         tags = sorted(set(tag for post in posts for tag in post.get("tags", [])))
         months = get_months_from_posts(posts)
         nav_html = create_nav(active_page='tags', depth=1)
@@ -1609,6 +1640,7 @@ def archive():
     except Exception as e:
         print(f"Error in archive route: {e}")
         return f"Error: {str(e)}", 500
+
 
 @app.route("/tags/<tag_slug>")
 def show_tag(tag_slug):
@@ -1626,6 +1658,9 @@ def show_tag(tag_slug):
         if not filtered_posts:
             return "Ingen inlägg med denna tag", 404
         
+        # Extrahera år och månad för varje filtrerad post
+        _extract_year_month(filtered_posts)
+        
         nav_html = create_nav(active_page='tags', depth=2)
         
         return render_template(
@@ -1639,6 +1674,7 @@ def show_tag(tag_slug):
     except Exception as e:
         print(f"Error in show_tag route: {e}")
         return f"Error: {str(e)}", 500
+
 
 
 if __name__ == "__main__":
