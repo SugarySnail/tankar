@@ -1187,12 +1187,13 @@ def rebuild_outputs():
                 dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
                 year = dt.strftime("%Y")
                 month = dt.strftime("%m")
-            except:
+            except Exception as e:
                 year = "0000"
                 month = "00"
             
             # Ny struktur: posts/YYYY/MM/filename.html
             output_file = Path('output/posts') / year / month / post['filename']
+            print(f"🔧 DEBUG: Skapar mapp och fil: {output_file}")
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(post_html, encoding='utf-8')
 
