@@ -268,7 +268,14 @@ def create_rss_file(posts, filename, tag=None):
         content_processed = process_content_for_rss(post.get("content", ""))
         date_obj = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
         rss_date = date_obj.strftime("%a, %d %b %Y %H:%M:%S +0000")
-        post_url = f"{SITE_URL}/posts/{post['filename']}"
+        
+        # Extrahera år/månad för ny struktur
+        year = date_obj.strftime("%Y")
+        month = date_obj.strftime("%m")
+        
+        # Ny sökväg: posts/YYYY/MM/filename.html
+        post_url = f"{SITE_URL}/posts/{year}/{month}/{post['filename']}"
+        
         rss += f""" <item>
 <title>{escape_xml(post['title'])}</title>
 <link>{post_url}</link>
@@ -285,6 +292,7 @@ def create_rss_file(posts, filename, tag=None):
     # Loggning
     tag_label = f" ({tag})" if tag else ""
     print(f"✓ RSS-feed {filename} genererad ({len(posts)} inlägg){tag_label}")
+
 
 def generate_rss_feeds(posts):
     """Genererar rss.xml (max 30 senaste inlägg) och rss-ETIKETT.xml för varje etikett (max 30 per etikett)"""
@@ -576,17 +584,19 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
 
 
 
-
-
-
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
     safe_content = process_images_in_content(post["content"], post["tags_str"])
     try:
         dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
         formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+        year = dt.strftime("%Y")
+        month = dt.strftime("%m")
     except:
         formatted_date = post["date"]
+        year = "0000"
+        month = "00"
+    
     safe_date = html.escape(formatted_date)
     
     nav_html = ""
@@ -597,18 +607,18 @@ def make_post_html(post, include_admin_nav=False):
 <a href="/export">Exportera</a>
 <a href="/edit/{xml_filename}" style="color:#ff9800;">✎ Redigera</a>"""
     else:
-        nav_html = create_nav(active_page='posts', depth=1)
+        nav_html = create_nav(active_page='posts', depth=3)  # Depth 3 för posts/YYYY/MM/
     
     # Unik identifierare för varje inlägg (använd filnamnet som ID)
     post_id = post['filename'].replace('.html', '').replace('-', '_')
     
-    # Generera tagg-HTML
+    # Generera tagg-HTML (uppdatera sökväg för tags)
     tags_html = ""
     if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
         tag_links = []
         for tag in post["tags"]:
             tag_slug = tag.replace(" ", "-").lower()
-            tag_links.append(f'<a href="../tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+            tag_links.append(f'<a href="../../tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
         tags_html = " ".join(tag_links)
     
     return f"""<!doctype html>
@@ -616,7 +626,7 @@ def make_post_html(post, include_admin_nav=False):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../../css/style.css">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <title>{safe_title} - {SITE_TITLE}</title>
 </head>
@@ -641,7 +651,7 @@ def make_post_html(post, include_admin_nav=False):
     <div class="tags">{tags_html}</div>
 </div>
 
-<p><a href="../index.html">← Tillbaka till startsidan</a></p>
+<p><a href="../../index.html">← Tillbaka till startsidan</a></p>
 
 <!-- Hyvor Comments -->
 <div id="kommentarer"><hyvor-talk-comments
@@ -655,6 +665,7 @@ def make_post_html(post, include_admin_nav=False):
 
 </body>
 </html>"""
+
 
 
 def generate_rss_micro(posts):
@@ -975,27 +986,15 @@ def make_om_html():
 <ul>
   <li>Tillgänglighetsanpassning
     <ul>
-      <li>Webbplatsen behöver ses över som helhet</li>
-    </ul>
-  </li>
-  <li>Diskussionsforum för poesi
-    <ul>
-      <li>Just nu så går det bara att diskutera nypublicerad poesi, och den finns inte i något lättillgängligt arkiv heller för de inläggen som har den möjligheten, så också den nya poesin är svårdiskuterad. Vore kul med en diskussionsyta anpassad för besökare att kunna lyfta fram dikter och bolla tankar runt dem. Det kommer antagligen att växa till ett generellt poesiforum där man kan lägga ut och bolla runt sina egna dikter. (Freaksen visar mig nu denna webbplats som en framtida, svensk poesicentral, som alternativ till befintliga sådana ytor.)</li>
+      <li>Webbplatsen behöver ses över som helhet, med om menyer, etc. fungerar i skärmläsare.</li>
     </ul>
   </li>
   <li>Buggfixar
      <ul>
         <li>I arkivet tas mellanslag bort före och efter länkar inuti poster</li>
         <li>Färgen på "Nästa"- och "Tillbaka"-knapparna är hiskelig på mobil...</li>
-        <li>Ta en titt på om det går att generera kortare RSS-filer.</li>
       </ul>
      </li>
-  <li>Implementera sökmotor?
-    <ul>
-      <li>Jag vill minnas att poesiarkivet avsiktligt inte indexeras av sökmotorer just nu, så då är det väl trevligt om jag erbjuder något alternativ. Dock så fungerar "ctrl+f" utmärkt för mig ;)</li>
-    </ul>
-  </li>
-  <li>Utvidga FAQn</li>
 </ul>
 
 
@@ -1123,8 +1122,12 @@ def rebuild_outputs():
                 try:
                     dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
                     formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+                    year = dt.strftime("%Y")
+                    month = dt.strftime("%m")
                 except:
                     formatted_date = post["date"]
+                    year = "0000"
+                    month = "00"
                 
                 safe_date = html.escape(formatted_date)
                 safe_content = post["content"]
@@ -1138,9 +1141,10 @@ def rebuild_outputs():
                     tags_html = " ".join(tag_links)
                     tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
                 
+                # Ny sökväg: posts/YYYY/MM/filename.html
                 cards += f"""
         <div class="card">
-            <h2><a href="posts/{post['filename']}">{safe_title}</a></h2>
+            <h2><a href="posts/{year}/{month}/{post['filename']}">{safe_title}</a></h2>
             <p class="date">{safe_date}</p>
             <div>{safe_content}</div>
             {tags_html}
@@ -1179,9 +1183,19 @@ def rebuild_outputs():
     for post in posts:
         if post:
             post_html = make_post_html(post)
-            output_file = Path('output/posts') / post['filename']
+            try:
+                dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+                year = dt.strftime("%Y")
+                month = dt.strftime("%m")
+            except:
+                year = "0000"
+                month = "00"
+            
+            # Ny struktur: posts/YYYY/MM/filename.html
+            output_file = Path('output/posts') / year / month / post['filename']
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(post_html, encoding='utf-8')
+
     
     # Generera mikroblogg
     micro_posts = load_microblog_posts()
@@ -1220,13 +1234,18 @@ def rebuild_outputs():
         
         tag_slug = slugify(tag)
         filtered_posts = [p for p in posts if tag in p.get("tags", []) and "poesi" not in p.get("tags", [])]
-        
-        # Lägg till excerpts till varje inlägg (använd post['content'] direkt)
+
+        # Extrahera år/månad och excerpts för varje inlägg
         for post in filtered_posts:
             try:
+                dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+                post['year'] = dt.strftime("%Y")
+                post['month'] = dt.strftime("%m")
                 post['excerpt'] = extract_excerpt(html.unescape(post.get('content', '')), words=50)
             except Exception as e:
                 print(f"  Varning: Kunde inte skapa excerpt för {post['filename']}: {e}")
+                post['year'] = "0000"
+                post['month'] = "00"
                 post['excerpt'] = ""
         
         months = get_months_from_posts(filtered_posts)
@@ -1276,8 +1295,6 @@ def rebuild_outputs():
     rss_output_dir = Path('output/pages')
     rss_output_dir.mkdir(parents=True, exist_ok=True)
     (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
-
-
 
 
 
