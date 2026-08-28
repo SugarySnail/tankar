@@ -568,29 +568,29 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
         if include_admin_nav:
             link = f"/posts/{year}/{month}/{post['filename']}"
             xml_filename = post.get("xml_filename", "")
-            edit_button = f'''<a href="/edit/{xml_filename}" style="color:#ff9800; margin-left:10px;">✎ Redigera</a>
-<button onclick="deletePost('{xml_filename}')" style="color:#ff3333; margin-left:10px; border:none; background:none; cursor:pointer; font-size:1.2em;">✕ Ta bort</button>'''
+            edit_delete_buttons = f'''<div class="admin-buttons">
+            <a href="/edit/{xml_filename}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+            <button onclick="deletePost('{xml_filename}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
+</div>'''
 
         else:
             link = f"posts/{year}/{month}/{post['filename']}"
-            edit_button = ""
+            edit_delete_buttons = ""
         
         # Kommentera-länk
         comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a>'
         
         cards += f"""
         <div class="card">
-            <h2><a href="{link}">{safe_title}</a>{edit_button}</h2>
-            <div class="date-tags-wrapper">
-                <span class="date">{safe_date}</span>
-            </div>
+            {edit_delete_buttons}
+            <h2><a href="{link}">{safe_title}</a></h2>
+            <span class="date">{safe_date}</span>
             <div>{safe_content}</div>            
             <div class="comment-tags-wrapper">
                 <div class="comment-link">{comment_link}</div>
                 <div class="tags">{tags_html}</div>
             </div>
-
-            
+            {edit_delete_buttons}
         </div>"""
     
     # Pagination
@@ -650,6 +650,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
     </script>
 </body>
 </html>""", pages
+
 
 
 
