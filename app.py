@@ -981,6 +981,27 @@ def make_poesi_html():
                <h2>Poesi</h2>
                <p>Min fullständiga samling med poesi finns på <a href="https://poesi.myjak.net">https://poesi.myjak.net</a>.</p>
 <p>Endast ny poesi läggs ut här i bloggen, i syfte att det ska gå att prenumerera på den <a href="https://tankar.myjak.net/rss-poesi.xml">via RSS</a> (<a href="rss.html">info</a>). <b>Eventuella korrigeringar och omarbetningar av mina dikter publiceras enbart på sidan ovan,</b> så om du vill citera mig, använd helst den sidan som källa för att säkerställa att du har den senaste versionen av dikten.</p><p>Tack!</p>
+
+<h2>Smakprov</h2>
+<p>Här väljer jag då och då ut något ur arkivet som jag själv gillar!</p>
+
+<h3>Zoar</h3>
+<div role="doc-poem" class="poem-line">alla leker he-man på rasten
+och jag förstår inte varför jag är fel
+jag flyger iväg som Zoar
+orangeblå vingar över skolgården
+
+och när alla står med en öl i handen,
+skrattar åt varandras skämt,
+så förstår jag fortfarande inte
+svävar högt ovan Etheria
+
+de frågar sen, vad som är fel,
+men det är ju jag,
+så jag säger som det är:
+ingenting
+högt, högt där uppe</div>
+<P><EM>2024-09-13</em></P>
            </div>
           </div>
        </main>
