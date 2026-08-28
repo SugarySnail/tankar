@@ -793,7 +793,6 @@ def load_microblog_posts():
     """Ladda alla microblogs sorterade från nyast till äldst"""
     if not MICRO_DIR.exists():
         return []
-    
     posts = []
     # Sök rekursivt i alla YYYY/MM-mappar
     for xml_file in sorted(MICRO_DIR.glob('*/*/*.xml'), reverse=True):
@@ -804,12 +803,13 @@ def load_microblog_posts():
                 'id': xml_file.stem,
                 'timestamp': root.find('timestamp').text,
                 'content': root.find('content').text,
-                'filename': xml_file.name
+                'filename': xml_file.name,
+                'filepath': str(xml_file)  # ← LÄGG TILL DENNA RAD!
             })
         except Exception as e:
             print(f"Fel vid läsning av {xml_file}: {e}")
-    
     return posts
+
 
 
 
@@ -1463,22 +1463,40 @@ def index():
         return f"Error: {str(e)}", 500
 
 @app.route('/delete/<path:xml_path>', methods=['POST'])
+@admin_only
 def delete_post(xml_path):
     """Tar bort ett inlägg"""
+    print(f"DEBUG: xml_path = {xml_path}")  # ← LÄGG TILL DETTA
+    print(f"DEBUG: POSTS_DIR = {POSTS_DIR}")
     xml_file = POSTS_DIR / xml_path
     
-    # Säkerhetskontroll
+    # Säkerhetskontroll: check that the file is within POSTS_DIR
+    try:
+        xml_file.resolve().relative_to(POSTS_DIR.resolve())
+    except ValueError:
+        return jsonify({"error": "Otillåten filväg"}), 403
+    
+    # Kontrollera att filen finns och är en XML-fil
     if not xml_file.exists() or not str(xml_file).endswith('.xml'):
         return jsonify({"error": "Inlägg hittades inte"}), 404
     
     try:
         xml_file.unlink()  # Raderar filen
+        
+        # Försök att ta bort tom mappstruktur (YYYY/MM/)
+        try:
+            xml_file.parent.rmdir()  # Raderar mappen om den är tom
+            xml_file.parent.parent.rmdir()  # Raderar YYYY-mappen om den är tom
+        except OSError:
+            pass  # Mappen är inte tom, det är OK
+        
         # Regenerera alla sidor efter borttagning
         posts = load_posts()
         generate_all_pages(posts)
         return jsonify({"success": "Inlägg raderat"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -1537,7 +1555,7 @@ def micro_post():
                                error=f'Fel vid sparning: {str(e)}'), 500
 
 
-@app.route('/micro/edit/<post_id>', methods=['GET', 'POST'])
+@app.route('/micro/edit/<post_id>', methods=["GET", "POST"])
 @admin_only
 def micro_edit(post_id):
     """Redigera ett befintligt mikroinlägg"""
@@ -1550,7 +1568,6 @@ def micro_edit(post_id):
         for p in posts:
             if p.get('id') == post_id:
                 post = p
-                # Rekonstruera sökvägen från filnamnet
                 xml_file = Path(p.get('filepath', ''))
                 break
         
@@ -1571,12 +1588,11 @@ def micro_edit(post_id):
                                        post=post,
                                        error='Inlägget är för långt (max 5000 tecken)'), 400
             
-            # Hitta XML-filen i ny struktur
+            # Uppdatera XML-filen
             if xml_file and xml_file.exists():
                 tree = ET.parse(xml_file)
                 root = tree.getroot()
                 
-                # Uppdatera innehål
                 content_elem = root.find('content')
                 timestamp_elem = root.find('timestamp')
                 
@@ -1585,10 +1601,9 @@ def micro_edit(post_id):
                 if timestamp_elem is not None:
                     timestamp_elem.text = datetime.now().isoformat()
                 
-                # Spara uppdaterad XML
                 tree.write(str(xml_file), encoding='utf-8', xml_declaration=True)
             
-            # Regenerera sidor
+            # Regenerera
             posts = load_microblog_posts()
             make_microblog_html(posts)
             generate_all_microblog_pages(posts)
@@ -1608,16 +1623,14 @@ def micro_edit(post_id):
                                error=f'Fel vid redigering: {str(e)}'), 500
 
 
-
-
 @app.route('/micro/delete/<post_id>', methods=['POST'])
-@admin_only 
+@admin_only
 def micro_delete(post_id):
     """Ta bort ett mikroinlägg"""
     try:
         posts = load_microblog_posts()
         
-        # Hitta XML-filen för inlägget
+        # Hitta och ta bort XML-filen
         xml_file = None
         for p in posts:
             if p.get('id') == post_id:
@@ -1627,7 +1640,7 @@ def micro_delete(post_id):
         if xml_file and xml_file.exists():
             xml_file.unlink()
         
-        # Regenerera sidor
+        # Regenerera
         posts = load_microblog_posts()
         make_microblog_html(posts)
         generate_all_microblog_pages(posts)
@@ -1697,18 +1710,24 @@ def create():
 def edit(filename):
     """Redigera befintligt inlägg"""
     try:
-        # Konvertera gamla filnamn till ny sökväg (YYYY/MM/filnamn.xml)
-        xml_file = Path(filename)
-        if not str(xml_file).startswith(str(POSTS_DIR)):
-            # Om det är ett gammalt filnamn, försök hitta det i ny struktur
+        # Försök konvertera gamla format (YYYY-MM-DD-slug.xml) till ny sökväg
+        xml_file = None
+        
+        # Om det redan är en sökväg (YYYY/MM/filnamn.xml)
+        if "/" in filename:
+            xml_file = POSTS_DIR / filename
+        # Annars försök tolka det som ett gammalt filnamn
+        else:
             if filename.endswith('.xml'):
                 date_part = filename[:10]  # YYYY-MM-DD
-                xml_file = POSTS_DIR / date_part[:4] / date_part[5:7] / filename
+                year, month = date_part[:4], date_part[5:7]
+                xml_file = POSTS_DIR / year / month / filename
             else:
-                # Säkerhetskontroll
-                if ".." in filename or "/" in filename:
-                    return "Ogiltigt filnamn", 400
-                xml_file = POSTS_DIR / filename
+                return "Ogiltigt filnamn", 400
+        
+        # Säkerhetskontroll
+        if ".." in str(xml_file) or not str(xml_file).startswith(str(POSTS_DIR)):
+            return "Ogiltigt filnamn", 400
         
         if request.method == "POST":
             title = request.form.get("title", "").strip()
@@ -1717,18 +1736,25 @@ def edit(filename):
             tags = request.form.get("tags", "").strip()
             
             if not all([title, date, content]):
-                post = parse_post(str(xml_file))
-                return render_template("edit.html", 
-                                       post=post,
-                                       error="Alla fält krävs"), 400
+                if xml_file.exists():
+                    post = parse_post(str(xml_file))
+                    return render_template("edit.html", 
+                                           post=post,
+                                           error="Alla fält krävs"), 400
+                return "Inlägget hittades inte", 404
             
             try:
                 datetime.strptime(date, "%Y-%m-%dT%H:%M")
             except ValueError:
-                post = parse_post(str(xml_file))
-                return render_template("edit.html", 
-                                       post=post,
-                                       error="Ogiltigt datumformat"), 400
+                if xml_file.exists():
+                    post = parse_post(str(xml_file))
+                    return render_template("edit.html", 
+                                           post=post,
+                                           error="Ogiltigt datumformat"), 400
+                return "Inlägget hittades inte", 404
+            
+            if not xml_file.exists():
+                return "Inlägget hittades inte", 404
             
             save_post(title, date, content, tags, str(xml_file))
             rebuild_outputs()
@@ -1746,6 +1772,7 @@ def edit(filename):
     except Exception as e:
         print(f"Error in edit: {e}")
         return f"Serverfel: {str(e)}", 500
+
 
 
 
