@@ -155,7 +155,8 @@ def make_pagination_html(current_page, total_pages, base_url=""):
 
 def load_posts():
     posts = []
-    for file in POSTS_DIR.glob("*.xml"):
+    # Sök rekursivt i alla YYYY/MM-mappar
+    for file in POSTS_DIR.glob("*/*/*.xml"):
         post = parse_post(str(file))
         if post:
             posts.append(post)
@@ -332,12 +333,10 @@ def parse_post(xml_file):
     try:
         tree = ET.parse(xml_file)
         root = tree.getroot()
-        
         tags = []
         tags_elem = root.find("tags")
         if tags_elem is not None:
             tags = [tag.text for tag in tags_elem.findall("tag") if tag.text]
-        
         title = root.findtext("title", "")
         date = root.findtext("date", "")
         date_part = date.split("T")[0] if date else "0000-00-00"
@@ -349,11 +348,12 @@ def parse_post(xml_file):
             "tags": tags,
             "tags_str": ", ".join(tags),
             "filename": f"{date_part}-{slugify(title)}.html",
-            "xml_filename": Path(xml_file).name
+            "xml_filename": xml_file  # ← Spara full sökväg istället för bara filnamnet
         }
     except Exception as e:
         print(f"Error parsing {xml_file}: {e}")
         return None
+
 
 
 def get_post_by_xml_filename(xml_filename):
@@ -432,20 +432,27 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     if not xml_filename:
         date_part = date.split("T")[0]
         slug = slugify(title)
-        xml_filename = POSTS_DIR / f"{date_part}-{slug}.xml"
+        
+        # Extrahera år och månad
+        year, month, day = date_part.split("-")
+        
+        # Skapa mapp-struktur posts/YYYY/MM
+        post_dir = POSTS_DIR / year / month
+        post_dir.mkdir(parents=True, exist_ok=True)
+        
+        xml_filename = post_dir / f"{date_part}-{slug}.xml"
     else:
         xml_filename = Path(xml_filename)
     
-    content = content.replace('=”', '="')
-    content = content.replace('”>', '">')
-
+    # Resten av funktionen är samma...
+    content = content.replace('="', '="')
+    content = content.replace('">', '">')
     content = process_images_in_content(content, tags_str)
     
-    # Kontrollera om innehållet redan är omslaget av block-element
-    has_block_element = (any(content.strip().startswith(f'<{tag}') 
-                            for tag in ['div', 'p', 'article', 'section', 'blockquote']) or
-                        any(content.strip().endswith(f'</{tag}>') 
-                            for tag in ['div', 'p', 'article', 'section', 'blockquote']))
+    has_block_element = (any(content.strip().startswith(f'<{tag}')
+        for tag in ['div', 'p', 'article', 'section', 'blockquote']) or
+        any(content.strip().endswith(f'</{tag}>')
+        for tag in ['div', 'p', 'article', 'section', 'blockquote']))
     
     if not has_block_element:
         if not content.startswith('<p>'):
@@ -461,8 +468,10 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     tags_elem = ET.SubElement(root, "tags")
     for tag in tags:
         ET.SubElement(tags_elem, "tag").text = tag
+    
     tree = ET.ElementTree(root)
     tree.write(str(xml_filename), encoding="UTF-8", xml_declaration=True)
+
 
 
 
@@ -553,7 +562,9 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
         if include_admin_nav:
             link = f"/posts/{year}/{month}/{post['filename']}"
             xml_filename = post.get("xml_filename", "")
-            edit_button = f'<a href="/edit/{xml_filename}" style="color:#ff9800; margin-left:10px;">✎ Redigera</a>'
+            edit_button = f'''<a href="/edit/{xml_filename}" style="color:#ff9800; margin-left:10px;">✎ Redigera</a>
+<button onclick="deletePost('{xml_filename}')" style="color:#ff3333; margin-left:10px; border:none; background:none; cursor:pointer; font-size:1.2em;">✕ Ta bort</button>'''
+
         else:
             link = f"posts/{year}/{month}/{post['filename']}"
             edit_button = ""
@@ -614,8 +625,26 @@ def make_index_html(posts, include_admin_nav=False, per_page=10):
         {cards}
         {pagination}
     </div>
+    <script>
+        function deletePost(xmlFilename) {{
+            if (confirm('Är du säker på att du vill ta bort detta inlägg? Detta kan inte ångras.')) {{
+                fetch('/delete/' + xmlFilename, {{method: 'POST'}})
+                    .then(r => r.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            alert('Inlägget är raderat');
+                            location.reload();
+                        }} else {{
+                            alert('Fel: ' + data.error);
+                        }}
+                    }})
+                    .catch(e => alert('Fel vid borttagning: ' + e));
+            }}
+        }}
+    </script>
 </body>
 </html>""", pages
+
 
 
 
@@ -764,41 +793,49 @@ def load_microblog_posts():
     """Ladda alla microblogs sorterade från nyast till äldst"""
     if not MICRO_DIR.exists():
         return []
+    
     posts = []
-    for xml_file in sorted(MICRO_DIR.glob('*.xml'), reverse=True):
+    # Sök rekursivt i alla YYYY/MM-mappar
+    for xml_file in sorted(MICRO_DIR.glob('*/*/*.xml'), reverse=True):
         try:
             tree = ET.parse(xml_file)
             root = tree.getroot()
             posts.append({
-                'id': xml_file.stem,  # ← NYTT: Filnamnet utan extension (t.ex. "2026-08-27-185357")
+                'id': xml_file.stem,
                 'timestamp': root.find('timestamp').text,
                 'content': root.find('content').text,
                 'filename': xml_file.name
             })
         except Exception as e:
             print(f"Fel vid läsning av {xml_file}: {e}")
+    
     return posts
+
 
 
 
 def save_microblog_post(content):
     """Spara nytt microblogs-inlägg"""
-    MICRO_DIR.mkdir(parents=True, exist_ok=True)
+    now = datetime.now()
+    year = now.strftime('%Y')
+    month = now.strftime('%m')
     
-    now = datetime.now().strftime('%Y-%m-%d-%H%M%S')
-    filename = f"{now}.xml"
-    filepath = MICRO_DIR / filename
+    # Skapa mapp-struktur posts/micro/YYYY/MM
+    micro_dir = MICRO_DIR / year / month
+    micro_dir.mkdir(parents=True, exist_ok=True)
+    
+    filename = f"{now.strftime('%Y-%m-%d-%H%M%S')}.xml"
+    filepath = micro_dir / filename
     
     root = ET.Element('micro')
-    
     timestamp_elem = ET.SubElement(root, 'timestamp')
-    timestamp_elem.text = datetime.now().isoformat()
-    
+    timestamp_elem.text = now.isoformat()
     content_elem = ET.SubElement(root, 'content')
     content_elem.text = content
     
     tree = ET.ElementTree(root)
-    tree.write(filepath, encoding='utf-8', xml_declaration=True)
+    tree.write(str(filepath), encoding='utf-8', xml_declaration=True)
+
 
 
 def make_microblog_html(posts):
@@ -1425,6 +1462,25 @@ def index():
         print(f"Error in index route: {e}")
         return f"Error: {str(e)}", 500
 
+@app.route('/delete/<path:xml_path>', methods=['POST'])
+def delete_post(xml_path):
+    """Tar bort ett inlägg"""
+    xml_file = POSTS_DIR / xml_path
+    
+    # Säkerhetskontroll
+    if not xml_file.exists() or not str(xml_file).endswith('.xml'):
+        return jsonify({"error": "Inlägg hittades inte"}), 404
+    
+    try:
+        xml_file.unlink()  # Raderar filen
+        # Regenerera alla sidor efter borttagning
+        posts = load_posts()
+        generate_all_pages(posts)
+        return jsonify({"success": "Inlägg raderat"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 
 @app.route("/posts/<filename>")
 @admin_only
@@ -1482,6 +1538,7 @@ def micro_post():
 
 
 @app.route('/micro/edit/<post_id>', methods=['GET', 'POST'])
+@admin_only
 def micro_edit(post_id):
     """Redigera ett befintligt mikroinlägg"""
     try:
@@ -1489,11 +1546,12 @@ def micro_edit(post_id):
         
         # Hitta inlägget
         post = None
-        post_index = None
-        for idx, p in enumerate(posts):
+        xml_file = None
+        for p in posts:
             if p.get('id') == post_id:
                 post = p
-                post_index = idx
+                # Rekonstruera sökvägen från filnamnet
+                xml_file = Path(p.get('filepath', ''))
                 break
         
         if post is None:
@@ -1513,23 +1571,22 @@ def micro_edit(post_id):
                                        post=post,
                                        error='Inlägget är för långt (max 5000 tecken)'), 400
             
-            # Uppdatera XML-filen
-            xml_file = MICRO_DIR / f"{post_id}.xml"
-            if xml_file.exists():
+            # Hitta XML-filen i ny struktur
+            if xml_file and xml_file.exists():
                 tree = ET.parse(xml_file)
                 root = tree.getroot()
                 
-                # Uppdatera innehål och datum
+                # Uppdatera innehål
                 content_elem = root.find('content')
                 timestamp_elem = root.find('timestamp')
                 
                 if content_elem is not None:
                     content_elem.text = new_content
                 if timestamp_elem is not None:
-                    timestamp_elem.text = datetime.now().strftime('%Y-%m-%d %H:%M')
+                    timestamp_elem.text = datetime.now().isoformat()
                 
                 # Spara uppdaterad XML
-                tree.write(xml_file, encoding='utf-8', xml_declaration=True)
+                tree.write(str(xml_file), encoding='utf-8', xml_declaration=True)
             
             # Regenerera sidor
             posts = load_microblog_posts()
@@ -1552,13 +1609,22 @@ def micro_edit(post_id):
 
 
 
+
 @app.route('/micro/delete/<post_id>', methods=['POST'])
+@admin_only 
 def micro_delete(post_id):
     """Ta bort ett mikroinlägg"""
     try:
-        # Ta bort XML-filen
-        xml_file = MICRO_DIR / f"{post_id}.xml"
-        if xml_file.exists():
+        posts = load_microblog_posts()
+        
+        # Hitta XML-filen för inlägget
+        xml_file = None
+        for p in posts:
+            if p.get('id') == post_id:
+                xml_file = Path(p.get('filepath', ''))
+                break
+        
+        if xml_file and xml_file.exists():
             xml_file.unlink()
         
         # Regenerera sidor
@@ -1577,6 +1643,7 @@ def micro_delete(post_id):
         print(f"Error in micro_delete: {e}")
         return render_template('micro_create.html', 
                                error=f'Fel vid borttagning: {str(e)}'), 500
+
 
 
 @app.route('/micro/admin')
@@ -1630,10 +1697,18 @@ def create():
 def edit(filename):
     """Redigera befintligt inlägg"""
     try:
-        if ".." in filename or "/" in filename:
-            return "Ogiltigt filnamn", 400
-        
-        xml_file = POSTS_DIR / filename
+        # Konvertera gamla filnamn till ny sökväg (YYYY/MM/filnamn.xml)
+        xml_file = Path(filename)
+        if not str(xml_file).startswith(str(POSTS_DIR)):
+            # Om det är ett gammalt filnamn, försök hitta det i ny struktur
+            if filename.endswith('.xml'):
+                date_part = filename[:10]  # YYYY-MM-DD
+                xml_file = POSTS_DIR / date_part[:4] / date_part[5:7] / filename
+            else:
+                # Säkerhetskontroll
+                if ".." in filename or "/" in filename:
+                    return "Ogiltigt filnamn", 400
+                xml_file = POSTS_DIR / filename
         
         if request.method == "POST":
             title = request.form.get("title", "").strip()
@@ -1642,7 +1717,7 @@ def edit(filename):
             tags = request.form.get("tags", "").strip()
             
             if not all([title, date, content]):
-                post = get_post_by_xml_filename(filename)
+                post = parse_post(str(xml_file))
                 return render_template("edit.html", 
                                        post=post,
                                        error="Alla fält krävs"), 400
@@ -1650,7 +1725,7 @@ def edit(filename):
             try:
                 datetime.strptime(date, "%Y-%m-%dT%H:%M")
             except ValueError:
-                post = get_post_by_xml_filename(filename)
+                post = parse_post(str(xml_file))
                 return render_template("edit.html", 
                                        post=post,
                                        error="Ogiltigt datumformat"), 400
@@ -1660,7 +1735,10 @@ def edit(filename):
             
             return redirect("/")
         
-        post = get_post_by_xml_filename(filename)
+        if not xml_file.exists():
+            return "Inlägget hittades inte", 404
+        
+        post = parse_post(str(xml_file))
         if not post:
             return "Inlägget hittades inte", 404
         
@@ -1668,6 +1746,7 @@ def edit(filename):
     except Exception as e:
         print(f"Error in edit: {e}")
         return f"Serverfel: {str(e)}", 500
+
 
 
 @app.route("/export")
