@@ -337,9 +337,14 @@ def parse_post(xml_file):
         tags_elem = root.find("tags")
         if tags_elem is not None:
             tags = [tag.text for tag in tags_elem.findall("tag") if tag.text]
+        
         title = root.findtext("title", "")
         date = root.findtext("date", "")
         date_part = date.split("T")[0] if date else "0000-00-00"
+        
+        # Konvertera till relativ sökväg från POSTS_DIR
+        xml_path = Path(xml_file)
+        relative_path = xml_path.relative_to(POSTS_DIR)
         
         return {
             "title": title,
@@ -348,11 +353,12 @@ def parse_post(xml_file):
             "tags": tags,
             "tags_str": ", ".join(tags),
             "filename": f"{date_part}-{slugify(title)}.html",
-            "xml_filename": xml_file  # ← Spara full sökväg istället för bara filnamnet
+            "xml_filename": str(relative_path)  # ← Använd relativ sökväg!
         }
     except Exception as e:
         print(f"Error parsing {xml_file}: {e}")
         return None
+
 
 
 
@@ -1466,7 +1472,7 @@ def index():
 @admin_only
 def delete_post(xml_path):
     """Tar bort ett inlägg"""
-    print(f"DEBUG: xml_path = {xml_path}")  # ← LÄGG TILL DETTA
+    print(f"DEBUG: xml_path = {xml_path}")
     print(f"DEBUG: POSTS_DIR = {POSTS_DIR}")
     xml_file = POSTS_DIR / xml_path
     
@@ -1491,11 +1497,11 @@ def delete_post(xml_path):
             pass  # Mappen är inte tom, det är OK
         
         # Regenerera alla sidor efter borttagning
-        posts = load_posts()
-        generate_all_pages(posts)
+        rebuild_outputs()
         return jsonify({"success": "Inlägg raderat"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -1705,28 +1711,17 @@ def create():
         return f"Serverfel: {str(e)}", 500
 
 
-@app.route("/edit/<filename>", methods=["GET", "POST"])
+@app.route("/edit/<path:xml_path>", methods=["GET", "POST"])
 @admin_only
-def edit(filename):
+def edit(xml_path):
     """Redigera befintligt inlägg"""
     try:
-        # Försök konvertera gamla format (YYYY-MM-DD-slug.xml) till ny sökväg
-        xml_file = None
-        
-        # Om det redan är en sökväg (YYYY/MM/filnamn.xml)
-        if "/" in filename:
-            xml_file = POSTS_DIR / filename
-        # Annars försök tolka det som ett gammalt filnamn
-        else:
-            if filename.endswith('.xml'):
-                date_part = filename[:10]  # YYYY-MM-DD
-                year, month = date_part[:4], date_part[5:7]
-                xml_file = POSTS_DIR / year / month / filename
-            else:
-                return "Ogiltigt filnamn", 400
+        xml_file = POSTS_DIR / xml_path
         
         # Säkerhetskontroll
-        if ".." in str(xml_file) or not str(xml_file).startswith(str(POSTS_DIR)):
+        try:
+            xml_file.resolve().relative_to(POSTS_DIR.resolve())
+        except ValueError:
             return "Ogiltigt filnamn", 400
         
         if request.method == "POST":
@@ -1772,6 +1767,7 @@ def edit(filename):
     except Exception as e:
         print(f"Error in edit: {e}")
         return f"Serverfel: {str(e)}", 500
+
 
 
 
