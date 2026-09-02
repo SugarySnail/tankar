@@ -22,7 +22,7 @@ OUTPUT_POSTS_DIR = OUTPUT_DIR / "posts"
 MICRO_DIR = BASE_DIR / "posts" / "micro"
 MICRO_OUTPUT_DIR = BASE_DIR / "output" / "micro"
 
-MICRO_PER_PAGE = 30
+MICRO_PER_PAGE = 50
 
 POSTS_DIR.mkdir(exist_ok=True)
 OUTPUT_POSTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -121,7 +121,7 @@ def process_content_for_rss(content):
 
 
 
-def paginate_posts(posts, per_page=10):
+def paginate_posts(posts, per_page=30):
     """Delar upp inlägg i sidor. Returnerar lista av listor."""
     pages = []
     for i in range(0, len(posts), per_page):
@@ -153,15 +153,36 @@ def make_pagination_html(current_page, total_pages, base_url=""):
     return html_out
 
 
-def load_posts():
+def load_posts(exclude_old_poetry=True):
+    """Ladda blogginlägg, med valfri gallring av gamla poesi-inlägg"""
     posts = []
+    poetry_posts = []
+    other_posts = []
+    
     # Sök rekursivt i alla YYYY/MM-mappar
     for file in POSTS_DIR.glob("*/*/*.xml"):
         post = parse_post(str(file))
         if post:
-            posts.append(post)
+            # Separera poesi från övriga inlägg
+            if 'poesi' in [t.lower() for t in post.get('tags', [])]:
+                poetry_posts.append(post)
+            else:
+                other_posts.append(post)
+    
+    # Sortera båda grupperna
+    poetry_posts.sort(key=lambda x: x["date"], reverse=True)
+    other_posts.sort(key=lambda x: x["date"], reverse=True)
+    
+    # Behåll endast de 30 senaste poesi-inläggen om gallring är aktiverat
+    if exclude_old_poetry:
+        poetry_posts = poetry_posts[:30]  # Behåll endast 30 senaste
+    
+    # Kombinera och sortera igen (poesi + övriga)
+    posts = poetry_posts + other_posts
     posts.sort(key=lambda x: x["date"], reverse=True)
+    
     return posts
+
 
 
 
@@ -523,7 +544,7 @@ def create_nav(active_page=None, depth=0):
 
 
 
-def make_index_html(posts, include_admin_nav=False, per_page=10):
+def make_index_html(posts, include_admin_nav=False, per_page=30):
     """Generera indexsida med pagination"""
     nav_html = create_nav(active_page='home', depth=0)
     
@@ -1023,8 +1044,8 @@ def make_poesi_html():
         <div class="grid">      
             <div class="card">
                <h2>Poesi</h2>
-               <p>Min fullständiga samling med poesi finns på <a href="https://poesi.myjak.net">https://poesi.myjak.net</a>.</p>
-<p>Endast ny poesi läggs ut här i bloggen, i syfte att det ska gå att prenumerera på den <a href="https://tankar.myjak.net/rss-poesi.xml">via RSS</a> (<a href="rss.html">info</a>). <b>Eventuella korrigeringar och omarbetningar av mina dikter publiceras enbart på sidan ovan,</b> så om du vill citera mig, använd helst den sidan som källa för att säkerställa att du har den senaste versionen av dikten.</p><p>Tack!</p>
+               <p><b>Min fullständiga samling med poesi finns på <a href="https://poesi.myjak.net">https://poesi.myjak.net</a>.</b></p>
+<p>Ny poesi läggs ut här i bloggen i syfte att det ska gå att prenumerera på den <a href="https://tankar.myjak.net/rss-poesi.xml">via RSS</a> (<a href="rss.html">info</a>). Endast de 30 senast publicerade dikterna syns här. Allt äldre slutar att indexeras av bloggen. <b>Eventuella korrigeringar och omarbetningar av mina dikter publiceras enbart i arkivet som är länkat ovan.</b> Om du vill citera mig, använd därför helst den sidan som källa för att säkerställa att du har den senaste versionen av dikten.</p><p>Tack!</p>
 
 <h2>Smakprov</h2>
 <p>Här väljer jag då och då ut något ur arkivet som jag själv gillar!</p>
@@ -1046,6 +1067,7 @@ så jag säger som det är:
 ingenting
 högt, högt där uppe</div>
 <P><EM>2024-09-13</em></P>
+<p><a href="https://poesi.myjak.net">https://poesi.myjak.net</a></p>
            </div>
           </div>
        </main>
@@ -1236,17 +1258,17 @@ def extract_excerpt(post_content, words=50):
 
 def rebuild_outputs():
     """Regenerera alla statiska HTML-filer"""
-    posts = load_posts()
+    posts = load_posts(exclude_old_poetry=True)
     
     # Generera blogg-sidor med pagination
-    index_html, pages = make_index_html(posts, include_admin_nav=False, per_page=10)
+    index_html, pages = make_index_html(posts, include_admin_nav=False, per_page=30)
     Path('output/index.html').write_text(index_html, encoding='utf-8')
     
     # Generera övriga sidor
     if len(pages) > 1:
         for page_num in range(2, len(pages) + 1):
             page_posts = pages[page_num - 1]
-            page_html, _ = make_index_html(posts, include_admin_nav=False, per_page=10)
+            page_html, _ = make_index_html(posts, include_admin_nav=False, per_page=30)
             
             # Skapa sida N
             cards = ""
@@ -1458,7 +1480,7 @@ def index():
     try:
         posts = load_posts()
         generate_rss_feeds(posts)
-        index_html, _ = make_index_html(posts, include_admin_nav=True, per_page=10)
+        index_html, _ = make_index_html(posts, include_admin_nav=True, per_page=30)
         return index_html
     except Exception as e:
         print(f"Error in index route: {e}")
@@ -1816,7 +1838,7 @@ def paginated_index(page_num):
     """Visa paginererad index (sida 2, 3, osv)"""
     try:
         posts = load_posts()
-        pages = paginate_posts(posts, per_page=10)
+        pages = paginate_posts(posts, per_page=30)
         
         if page_num < 1 or page_num > len(pages):
             return "Sidan finns inte", 404
