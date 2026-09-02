@@ -450,9 +450,9 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     else:
         xml_filename = Path(xml_filename)
     
-    # Resten av funktionen är samma...
-    content = content.replace('="', '="')
-    content = content.replace('">', '">')
+    # Ersätta ” med "
+    content = content.replace('=”', '="')
+    content = content.replace('”>', '">')
     content = process_images_in_content(content, tags_str)
     
     has_block_element = (any(content.strip().startswith(f'<{tag}')
@@ -1063,7 +1063,7 @@ def make_om_html():
    <head>
        <meta charset="UTF-8">
        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-       <title>Kontakt | My Jakobsson</title>
+       <title>Kontakt och info om webbplatsen | My Jakobsson</title>
        <link rel="stylesheet" href="../css/style.css">
        <link rel="icon" type="image/x-icon" href="/favicon.ico">
    </head>
@@ -1082,15 +1082,10 @@ def make_om_html():
                <p>E-post: <a href="mailto:kontakt@myjak.net">kontakt@myjak.net</a></p>
 
                 <h2>Om webbplatsen</h2>
-                <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Designvalet handlar om en romantisering av Mys svunna ungdom, då internet var ungt, oskuldsfullt och fyllt av möjligheter. Tecknade bilden överst i mikrobloggen är genererad av GPT 5.4 AI. </p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My. <b>Copyright råder</b>, men det förstår ni. Ni är vuxna människor!
+                <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Tecknade bilden överst i mikrobloggen samt forumavataren är genererade av GPT 5.4 AI. Jag ser fram emot att en dag ha en inkomst och kunna betala en människa för att hjälpa mig med bilder och grafik, men för stunden så är det vad det är.</p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My, om inte annat tydligt anges. <b>Copyright råder</b>, men det förstår ni. Ni är vuxna människor!
 
 <h3>Under utveckling</h3>
 <ul>
-  <li>Tillgänglighetsanpassning
-    <ul>
-      <li>Webbplatsen behöver ses över som helhet, med om menyer, etc. fungerar i skärmläsare.</li>
-    </ul>
-  </li>
   <li>Buggfixar
      <ul>
         <li>I arkivet tas mellanslag bort före och efter länkar inuti poster</li>
