@@ -247,6 +247,7 @@ def make_rss_page_html(posts):
         <ul>
         {tag_feeds}        </ul>
 
+<p>Notera att taggen djupdykningar är inbakad i tankar, så om du prenumererar på tankar behöver du inte också prenumerera på djupdykningar. </p>
 
 
         <h3>Hur prenumererar jag?</h3>
@@ -1044,7 +1045,7 @@ def make_poesi_html():
         <div class="grid">      
             <div class="card">
                <h2>Poesi</h2>
-               <p><b>Min fullständiga samling med poesi finns på <a href="https://poesi.myjak.net">https://poesi.myjak.net</a>.</b></p>
+               <p>Min fullständiga samling med poesi finns på <b><a href="https://poesi.myjak.net">https://poesi.myjak.net</a>.</b></p>
 <p>Ny poesi läggs ut här i bloggen i syfte att det ska gå att prenumerera på den <a href="https://tankar.myjak.net/rss-poesi.xml">via RSS</a> (<a href="rss.html">info</a>). Endast de 30 senast publicerade dikterna syns här. Allt äldre slutar att indexeras av bloggen. <b>Eventuella korrigeringar och omarbetningar av mina dikter publiceras enbart i arkivet som är länkat ovan.</b> Om du vill citera mig, använd därför helst den sidan som källa för att säkerställa att du har den senaste versionen av dikten.</p><p>Tack!</p>
 
 <h2>Smakprov</h2>
@@ -1213,6 +1214,7 @@ def extract_excerpt(post_content, words=50):
             self.word_count = 0
             self.output = []
             self.open_tags = []  # Spåra vilka taggar som är öppna
+            self.last_was_tag = True  # Spåra om sista element var en tagg
             
         def handle_starttag(self, tag, attrs):
             if self.word_count < self.max_words:
@@ -1223,23 +1225,41 @@ def extract_excerpt(post_content, words=50):
                 else:
                     self.output.append(f'<{tag}>')
                 self.open_tags.append(tag)
+                self.last_was_tag = True
                 
         def handle_endtag(self, tag):
             if self.word_count < self.max_words:
                 self.output.append(f'</{tag}>')
                 if tag in self.open_tags:
                     self.open_tags.remove(tag)
+                self.last_was_tag = True
                 
         def handle_data(self, data):
             if self.word_count >= self.max_words:
                 return
-                
+            
+            # Bevara ledande/släpande whitespace
+            leading_space = ' ' if data and data[0].isspace() else ''
+            trailing_space = ' ' if data and data[-1].isspace() else ''
+            
             words_list = data.split()
             remaining = self.max_words - self.word_count
             
             if remaining > 0:
-                self.output.append(' '.join(words_list[:remaining]))
+                text = ' '.join(words_list[:remaining])
+                
+                # Lägg mellanslag före om vi just hade en tagg
+                if self.last_was_tag and leading_space:
+                    self.output.append(leading_space)
+                
+                self.output.append(text)
+                
+                # Lägg till släpande space om det fanns i original
+                if trailing_space and len(words_list[:remaining]) == len(words_list):
+                    self.output.append(trailing_space)
+                    
                 self.word_count += len(words_list[:remaining])
+                self.last_was_tag = False
     
     parser = ExcerptParser(words)
     parser.feed(html.unescape(post_content))
@@ -1251,8 +1271,6 @@ def extract_excerpt(post_content, words=50):
     
     excerpt = ''.join(parser.output).strip() + '...'
     return excerpt
-
-
 
 
 
