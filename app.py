@@ -181,8 +181,37 @@ def load_posts(exclude_old_poetry=True):
     posts = poetry_posts + other_posts
     posts.sort(key=lambda x: x["date"], reverse=True)
     
-    return posts
+    # Filtrera bort kommande inlägg för publik publicering
+    published_posts = [p for p in posts if is_post_published(p)]
+    
+    return published_posts
 
+
+def load_all_posts(exclude_old_poetry=True):
+    """Ladda ALLA blogginlägg inklusive framtida (för admin)"""
+    posts = []
+    poetry_posts = []
+    other_posts = []
+    
+    # Samma logic som load_posts men utan filtrering
+    for file in POSTS_DIR.glob("*/*/*.xml"):
+        post = parse_post(str(file))
+        if post:
+            if 'poesi' in [t.lower() for t in post.get('tags', [])]:
+                poetry_posts.append(post)
+            else:
+                other_posts.append(post)
+    
+    poetry_posts.sort(key=lambda x: x["date"], reverse=True)
+    other_posts.sort(key=lambda x: x["date"], reverse=True)
+    
+    if exclude_old_poetry:
+        poetry_posts = poetry_posts[:30]
+    
+    posts = poetry_posts + other_posts
+    posts.sort(key=lambda x: x["date"], reverse=True)
+    
+    return posts  # Returnera ALLA inlägg
 
 
 
@@ -385,6 +414,19 @@ def parse_post(xml_file):
         return None
 
 
+from datetime import datetime
+
+def is_post_published(post):
+    """
+    Kontrollerar om ett inlägg bör publiceras.
+    Returnerar False om datumet ligger i framtiden.
+    """
+    try:
+        post_datetime = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+        current_datetime = datetime.now()
+        return post_datetime <= current_datetime
+    except Exception:
+        return True  # Om datumformat är fel, publicera det
 
 
 def get_post_by_xml_filename(xml_filename):
@@ -590,6 +632,10 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
             year = "0000"
             month = "00"
 
+        # NYTT: Kontrollera om inlägget är framtida
+        is_future = not is_post_published(post)
+        future_badge = '<span style="color: #ff9800; font-weight: bold; margin-left: 10px;">kommande</span>' if is_future else ""
+
         if include_admin_nav:
             link = f"/posts/{year}/{month}/{post['filename']}"
             xml_filename = post.get("xml_filename", "")
@@ -608,7 +654,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         cards += f"""
         <div class="card">
             {edit_delete_buttons}
-            <h2><a href="{link}">{safe_title}</a></h2>
+            <h2><a href="{link}">{safe_title}{future_badge}</a></h2>
             <span class="date">{safe_date}</span>
             <div>{safe_content}</div>            
             <div class="comment-tags-wrapper">
@@ -675,6 +721,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
     </script>
 </body>
 </html>""", pages
+
 
 
 
@@ -1487,7 +1534,7 @@ def admin_only(f):
 def index():
     """Hem-sidan med admin-funktioner (localhost)"""
     try:
-        posts = load_posts()
+        posts = load_all_posts()
         generate_rss_feeds(posts)
         index_html, _ = make_index_html(posts, include_admin_nav=True, per_page=30)
         return index_html
