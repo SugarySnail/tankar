@@ -204,7 +204,9 @@ def make_rss_page_html(posts):
     tag_feeds = ""
     for tag, count in sorted_tags:
         tag_slug = slugify(tag)
-        tag_feeds += f'        <li><a href="/rss-{tag_slug}.xml">{tag}</a> ({count})</li>\n'
+        # Add asterisk after "djupdykningar"
+        asterisk = " *" if tag == "djupdykningar" else ""
+        tag_feeds += f'        <li><a href="/rss-{tag_slug}.xml">{tag}</a> ({count}){asterisk}</li>\n'
     
     html = f"""<!DOCTYPE html>
 <html lang="sv">
@@ -230,7 +232,7 @@ def make_rss_page_html(posts):
         <div class="card">
         <h2>RSS-flöden</h2>
         
-        <p>RSS är ett sätt att prenumerera på uppdateringar från mig. Du behöver en RSS-läsare (såsom Feedly, Microsoft Outlook, eller Thunderbird) för att läsa flödena. Att prenumerera är gratis, och jag kan inte spåra vem som prenumerar. RSS-läsare har vanligtvis en fördröjning på alltifrån 20 minuter till en dag på hur ofta de tittar efter uppdateringar, så du kommer inte att bli meddelad i samma sekund som jag postar något. </p>
+        <p>RSS är ett sätt att prenumerera på uppdateringar från mig. Du behöver en RSS-läsare (såsom Feedly, Microsoft Outlook, eller Thunderbird) för att läsa flödena. Att prenumerera är gratis, och jag kan inte spåra vem som prenumerar. RSS-läsare har vanligtvis en fördröjning på hur ofta de tittar efter uppdateringar, så du kommer inte att bli meddelad i samma sekund som jag postar något. </p>
 
 <p>Du kan välja på att prenumerera på alla mina inlägg i en enda jätte-RSS (mikrobloggen exkluderad), eller att prenumerera på enskilda kategorier:</p>
 
@@ -247,7 +249,7 @@ def make_rss_page_html(posts):
         <ul>
         {tag_feeds}        </ul>
 
-<p>Notera att taggen djupdykningar är inbakad i tankar, så om du prenumererar på tankar behöver du inte också prenumerera på djupdykningar. </p>
+<p>* Djupdykningar är inbakad i tankar, så om du prenumererar på tankar behöver du inte också prenumerera på djupdykningar. </p>
 
 
         <h3>Hur prenumererar jag?</h3>
@@ -265,7 +267,8 @@ def make_rss_page_html(posts):
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(html, encoding='utf-8')
     
-    return html  # ← LÄGG TILL DENNA RAD
+    return html
+
 
 
 def escape_xml(text):
@@ -1106,18 +1109,6 @@ def make_om_html():
 
                 <h2>Om webbplatsen</h2>
                 <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Tecknade bilden överst i mikrobloggen samt forumavataren är genererade av GPT 5.4 AI. Jag ser fram emot att en dag ha en inkomst och kunna betala en människa för att hjälpa mig med bilder och grafik, men för stunden så är det vad det är.</p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My, om inte annat tydligt anges. <b>Copyright råder</b>, men det förstår ni. Ni är vuxna människor!
-
-<h3>Under utveckling</h3>
-<ul>
-  <li>Buggfixar
-     <ul>
-        <li>I arkivet tas mellanslag bort före och efter länkar inuti poster</li>
-      </ul>
-     </li>
-</ul>
-
-
-
 
            </div>
           </div>
