@@ -86,7 +86,7 @@ def process_images_in_content(content, tags_str=""):
 def process_content_for_rss(content):
     """Konverterar poesi-divs med bevarade radbrytningar till RSS-format"""
     
-    # Extrahera allt innehål från poem-line divs och konvertera radbrytningar till <br/>
+    # Extrahera allt innehåll från poem-line divs och konvertera radbrytningar till <br/>
     def convert_poem_div(match):
         inner_content = match.group(1)
         # Konvertera varje radbrytning inom divet till <br/>
@@ -119,6 +119,28 @@ def process_content_for_rss(content):
     
     return content
 
+
+def calculate_reading_time(content):
+    """
+    Beräknar ungefärlig läsestid baserat på ordantal.
+    Genomsnittlig läshastighet: ~200 ord per minut.
+    Returnerar en string som "3 min läsning" eller "1 min läsning"
+    """
+    # Ta bort HTML-taggar för att få bara texten
+    clean_content = re.sub(r'<[^>]+>', '', content)
+    
+    # Räkna ord (dela på whitespace)
+    word_count = len(clean_content.split())
+    
+    # Beräkna läsestid (200 ord per minut är standard)
+    if word_count < 100:
+        return "< 1 min läsning"
+    
+    reading_time = round(word_count / 200)
+    if reading_time == 0:
+        return "< 1 min läsning"
+    
+    return f"{reading_time} min läsning"
 
 
 def paginate_posts(posts, per_page=30):
@@ -320,7 +342,7 @@ def create_rss_file(posts, filename, tag=None):
 <language>sv</language>
 """
     for post in posts:
-        # Använd den nya funktionen för RSS-innehål
+        # Använd den nya funktionen för RSS-innehåll
         content_processed = process_content_for_rss(post.get("content", ""))
         date_obj = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
         rss_date = date_obj.strftime("%a, %d %b %Y %H:%M:%S +0000")
@@ -332,12 +354,21 @@ def create_rss_file(posts, filename, tag=None):
         # Ny sökväg: posts/YYYY/MM/filename.html
         post_url = f"{SITE_URL}/posts/{year}/{month}/{post['filename']}"
         
+        # Generera reading_time_html (samma logik som i make_index_html)
+        reading_time_text = ""
+        if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
+            reading_time = post.get("reading_time", "")
+            if reading_time:
+                reading_time_text = f" • ⏱ {escape_xml(reading_time)}"
+        
         rss += f""" <item>
 <title>{escape_xml(post['title'])}</title>
 <link>{post_url}</link>
 <pubDate>{rss_date}</pubDate>
-<description>{escape_xml(post['content'][:300])}</description>
-<content:encoded><![CDATA[{content_processed}]]></content:encoded>
+<description>{escape_xml(post['content'][:300])}{reading_time_text}</description>
+<content:encoded><![CDATA[{content_processed}
+
+<p style="color: #999; margin-top: 20px; font-size: 0.9em;">⏱ {post.get("reading_time", "")}</p>]]></content:encoded>
 </item>
 """
     rss += """ </channel>
@@ -348,6 +379,8 @@ def create_rss_file(posts, filename, tag=None):
     # Loggning
     tag_label = f" ({tag})" if tag else ""
     print(f"✓ RSS-feed {filename} genererad ({len(posts)} inlägg){tag_label}")
+
+
 
 
 
@@ -399,6 +432,9 @@ def parse_post(xml_file):
         # Konvertera till relativ sökväg från POSTS_DIR
         xml_path = Path(xml_file)
         relative_path = xml_path.relative_to(POSTS_DIR)
+
+        # lästid
+        reading_time = calculate_reading_time(root.findtext("content", ""))
         
         return {
             "title": title,
@@ -407,7 +443,8 @@ def parse_post(xml_file):
             "tags": tags,
             "tags_str": ", ".join(tags),
             "filename": f"{date_part}-{slugify(title)}.html",
-            "xml_filename": str(relative_path)  # ← Använd relativ sökväg!
+            "xml_filename": str(relative_path),  
+            "reading_time": reading_time,
         }
     except Exception as e:
         print(f"Error parsing {xml_file}: {e}")
@@ -487,7 +524,7 @@ def get_months_from_posts(posts):
                     "posts": []
                 }
             
-            # ← ÄNDRAT: sätt även year och month på varje post för template-användning
+            # sätt year och month på varje post för template-användning
             post["year"] = str(year)
             post["month"] = f"{month:02d}"
             
@@ -650,18 +687,27 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         
         # Kommentera-länk
         comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a>'
+
+        # Generera reading_time_html (samma som i rebuild_outputs)
+        reading_time_html = ""
+        if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
+            reading_time = post.get("reading_time", "")
+            if reading_time:
+                reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {reading_time}</span>'
         
         cards += f"""
         <div class="card">
             {edit_delete_buttons}
             <h2><a href="{link}">{safe_title}{future_badge}</a></h2>
-            <span class="date">{safe_date}</span>
+            <div class="date-tags-wrapper">
+                <span class="date">{safe_date}</span>
+                {reading_time_html}
+            </div>
             <div>{safe_content}</div>            
             <div class="comment-tags-wrapper">
                 <div class="comment-link">{comment_link}</div>
                 <div class="tags">{tags_html}</div>
             </div>
-            {edit_delete_buttons}
         </div>"""
     
     # Pagination
@@ -731,6 +777,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
     safe_content = process_images_in_content(post["content"], post["tags_str"])
+
     try:
         dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
         formatted_date = dt.strftime("%Y-%m-%d %H:%M")
@@ -755,6 +802,12 @@ def make_post_html(post, include_admin_nav=False):
     
     # Unik identifierare för varje inlägg
     post_id = post['filename'].replace('.html', '').replace('-', '_')
+
+    # lästid
+    reading_time_html = ""
+    if post.get("reading_time") and 'poesi' not in [t.lower() for t in post.get("tags", [])]:
+        reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {post["reading_time"]}</span>'
+
     
     # Generera tagg-HTML (uppdatera sökväg för tags från ../tags/ till ../../tags/)
     tags_html = ""
@@ -788,6 +841,7 @@ def make_post_html(post, include_admin_nav=False):
 <h2>{safe_title}</h2>
 <div class="date-tags-wrapper">
     <span class="date">{safe_date}</span>
+    {reading_time_html}
 </div>
 <div>{safe_content}</div>
 
@@ -1343,6 +1397,14 @@ def rebuild_outputs():
                 safe_date = html.escape(formatted_date)
                 safe_content = post["content"]
                 
+                # Generera reading_time_html
+                reading_time_html = ""
+                if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
+                    reading_time = post.get("reading_time", "")
+                    if reading_time:
+                        reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {post["reading_time"]}</span>'
+
+                
                 tags_html = ""
                 if post.get("tags"):
                     tag_links = []
@@ -1356,7 +1418,10 @@ def rebuild_outputs():
                 cards += f"""
         <div class="card">
             <h2><a href="posts/{year}/{month}/{post['filename']}">{safe_title}</a></h2>
-            <p class="date">{safe_date}</p>
+            <div class="date-tags-wrapper">
+                <span class="date">{safe_date}</span>
+                {reading_time_html}
+            </div>
             <div>{safe_content}</div>
             {tags_html}
         </div>"""
@@ -1404,7 +1469,6 @@ def rebuild_outputs():
             
             # Ny struktur: posts/YYYY/MM/filename.html
             output_file = Path('output/posts') / year / month / post['filename']
-            print(f"🔧 DEBUG: Skapar mapp och fil: {output_file}")
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(post_html, encoding='utf-8')
 
@@ -1509,6 +1573,7 @@ def rebuild_outputs():
     rss_output_dir = Path('output/pages')
     rss_output_dir.mkdir(parents=True, exist_ok=True)
     (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
+
 
 
 
