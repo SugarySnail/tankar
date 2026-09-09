@@ -356,19 +356,19 @@ def create_rss_file(posts, filename, tag=None):
         
         # Generera reading_time_html (samma logik som i make_index_html)
         reading_time_text = ""
+        reading_time_paragraph = ""
         if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
             reading_time = post.get("reading_time", "")
             if reading_time:
                 reading_time_text = f" • ⏱ {escape_xml(reading_time)}"
+                reading_time_paragraph = f'<p style="color: #999; margin-bottom: 20px; font-size: 0.9em;"><em>⏱ {reading_time}.</em></p>'
         
         rss += f""" <item>
 <title>{escape_xml(post['title'])}</title>
 <link>{post_url}</link>
 <pubDate>{rss_date}</pubDate>
 <description>{escape_xml(post['content'][:300])}{reading_time_text}</description>
-<content:encoded><![CDATA[{content_processed}
-
-<p style="color: #999; margin-top: 20px; font-size: 0.9em;">⏱ {post.get("reading_time", "")}</p>]]></content:encoded>
+<content:encoded><![CDATA[{reading_time_paragraph}{content_processed}]]></content:encoded>
 </item>
 """
     rss += """ </channel>
@@ -379,6 +379,7 @@ def create_rss_file(posts, filename, tag=None):
     # Loggning
     tag_label = f" ({tag})" if tag else ""
     print(f"✓ RSS-feed {filename} genererad ({len(posts)} inlägg){tag_label}")
+
 
 
 
@@ -669,21 +670,33 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
             year = "0000"
             month = "00"
 
-        # NYTT: Kontrollera om inlägget är framtida
+        # Kontrollera om inlägget är framtida
         is_future = not is_post_published(post)
         future_badge = '<span style="color: #ff9800; font-weight: bold; margin-left: 10px;">kommande</span>' if is_future else ""
 
+        xml_filename = post.get("xml_filename", "")
+        
+        # Admin-knappar överst
         if include_admin_nav:
-            link = f"/posts/{year}/{month}/{post['filename']}"
-            xml_filename = post.get("xml_filename", "")
-            edit_delete_buttons = f'''<div class="admin-buttons">
+            edit_delete_buttons_top = f'''<div class="admin-buttons">
             <a href="/edit/{xml_filename}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
             <button onclick="deletePost('{xml_filename}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
 </div>'''
+        else:
+            edit_delete_buttons_top = ""
+        
+        # Admin-knappar i slutet
+        if include_admin_nav:
+            edit_delete_buttons_bottom = f'''<div class="admin-buttons" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+            <a href="/edit/{xml_filename}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+</div>'''
+        else:
+            edit_delete_buttons_bottom = ""
 
+        if include_admin_nav:
+            link = f"/posts/{year}/{month}/{post['filename']}"
         else:
             link = f"posts/{year}/{month}/{post['filename']}"
-            edit_delete_buttons = ""
         
         # Kommentera-länk
         comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a>'
@@ -697,7 +710,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         
         cards += f"""
         <div class="card">
-            {edit_delete_buttons}
+            {edit_delete_buttons_top}
             <h2><a href="{link}">{safe_title}{future_badge}</a></h2>
             <div class="date-tags-wrapper">
                 <span class="date">{safe_date}</span>
@@ -708,6 +721,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
                 <div class="comment-link">{comment_link}</div>
                 <div class="tags">{tags_html}</div>
             </div>
+            {edit_delete_buttons_bottom}
         </div>"""
     
     # Pagination
@@ -767,6 +781,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
     </script>
 </body>
 </html>""", pages
+
 
 
 
@@ -1500,10 +1515,8 @@ def rebuild_outputs():
     archive_dir = Path('output/tags')
     archive_dir.mkdir(parents=True, exist_ok=True)
     (archive_dir / 'index.html').write_text(archive_html, encoding='utf-8')
-    print("✓ Arkiv regenererat")
 
     # Generera tag-specifika arkiv-sidor
-    print("Börjar generera tag-sidor...")
     for tag in tags:
         if tag == "poesi":  # Hoppa över poesi-taggen
             continue
