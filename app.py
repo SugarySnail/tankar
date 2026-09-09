@@ -1141,61 +1141,43 @@ def generate_all_microblog_pages(posts):
 
 
 def make_poesi_html():
-       """Generate the page at output/pages/poesi.html."""
-       nav_html = create_nav(active_page='poesi', depth=1)
-       html_content = f"""<!DOCTYPE html>
-   <html lang="sv">
-   <head>
-       <meta charset="UTF-8">
-       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-       <title>Poesi | My Jakobsson</title>
-       <link rel="stylesheet" href="../css/style.css">
-       <link rel="icon" type="image/x-icon" href="/favicon.ico">
-   </head>
-   <body>
-       <header class="header">
-           <div class="header-content">
-               <h1>My Jakobsson</h1>
-               <p>tankar</p>
-           </div>
-       </header>
-       {nav_html}
-       <main>
-        <div class="grid">      
+    """Generate the page at output/pages/poesi.html."""
+    nav_html = create_nav(active_page='poesi', depth=1)
+    poesi_content = (Path('templates') / 'poesi.html').read_text(encoding='utf-8')
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poesi – My Jakobsson</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1>{SITE_TITLE}</h1>
+            <p>{SITE_DESCRIPTION}</p>
+        </div>
+    </header>
+
+    {nav_html}
+
+    <main>
+        <div class="grid">
             <div class="card">
-               <h2>Poesi</h2>
-               <p>Min fullständiga samling med poesi finns på <b><a href="https://poesi.myjak.net">https://poesi.myjak.net</a>.</b></p>
-<p>Ny poesi läggs ut här i bloggen i syfte att det ska gå att prenumerera på den <a href="https://tankar.myjak.net/rss-poesi.xml">via RSS</a> (<a href="rss.html">info</a>). Endast de 30 senast publicerade dikterna syns här. Allt äldre slutar att indexeras av bloggen. <b>Eventuella korrigeringar och omarbetningar av mina dikter publiceras enbart i arkivet som är länkat ovan.</b> Om du vill citera mig, använd därför helst den sidan som källa för att säkerställa att du har den senaste versionen av dikten.</p><p>Tack!</p>
+                {poesi_content}
+            </div>
+        </div>
+    </main>
+</body>
+</html>"""
 
-<h2>Smakprov</h2>
-<p>Här väljer jag då och då ut något ur arkivet som jag själv gillar!</p>
+    output_dir = Path('output/pages')
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / 'poesi.html').write_text(html_content, encoding='utf-8')
 
-<h3>Zoar</h3>
-<div role="doc-poem" class="poem-line">alla leker he-man på rasten
-och jag förstår inte varför jag är fel
-jag flyger iväg som Zoar
-orangeblå vingar över skolgården
-
-och när alla står med en öl i handen,
-skrattar åt varandras skämt,
-så förstår jag fortfarande inte
-svävar högt ovan Etheria
-
-de frågar sen, vad som är fel,
-men det är ju jag,
-så jag säger som det är:
-ingenting
-högt, högt där uppe</div>
-<P><EM>2024-09-13</em></P>
-<p><a href="https://poesi.myjak.net">https://poesi.myjak.net</a></p>
-           </div>
-          </div>
-       </main>
-   </body>
-   </html>"""
-       output_dir = Path('output/pages')
-       output_dir.mkdir(parents=True, exist_ok=True)
-       (output_dir / 'poesi.html').write_text(html_content, encoding='utf-8')
 
 def make_om_html():
        """Generate the page at output/pages/om.html."""
