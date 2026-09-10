@@ -158,9 +158,9 @@ def make_pagination_html(current_page, total_pages, base_url=""):
     # Föregående-knapp
     if current_page > 1:
         if current_page == 2:
-            prev_url = "index.html"
+            prev_url = "/"
         else:
-            prev_url = f"page-{current_page - 1}.html"
+            prev_url = f"/page-{current_page - 1}"
         html_out += f' <a href="{prev_url}" class="prev">← Föregående</a>\n'
     
     # Sidnummer
@@ -168,11 +168,12 @@ def make_pagination_html(current_page, total_pages, base_url=""):
     
     # Nästa-knapp
     if current_page < total_pages:
-        next_url = f"page-{current_page + 1}.html"
+        next_url = f"/page-{current_page + 1}"
         html_out += f' <a href="{next_url}" class="next">Nästa →</a>\n'
     
     html_out += '</nav>\n'
     return html_out
+
 
 
 def load_posts(exclude_old_poetry=True):
@@ -741,7 +742,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         # Kommentera-länk
         comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a>' if not show_read_more else ''
 
-        # Generera reading_time_html (samma som i rebuild_outputs)
+        # Generera reading_time_html 
         reading_time_html = ""
         if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
             reading_time = post.get("reading_time", "")
@@ -1439,36 +1440,60 @@ def rebuild_outputs():
     index_html, pages = make_index_html(posts, include_admin_nav=False, per_page=30)
     Path('output/index.html').write_text(index_html, encoding='utf-8')
     
-    # Generera övriga sidor
+    # Generera övriga paginerande sidor (sida 2, 3, osv)
+    # Eftersom paginated_index() är @admin_only, genererar vi HTML direkt här
     if len(pages) > 1:
         for page_num in range(2, len(pages) + 1):
+            nav_html = create_nav(active_page='home', depth=0)
             page_posts = pages[page_num - 1]
-            page_html, _ = make_index_html(posts, include_admin_nav=False, per_page=30)
+            include_admin_nav = False  # Ingen admin-nav för statiska filer
             
-            # Skapa sida N
             cards = ""
             for post in page_posts:
                 safe_title = html.escape(post["title"])
+                
                 try:
                     dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
                     formatted_date = dt.strftime("%Y-%m-%d %H:%M")
-                    year = dt.strftime("%Y")
-                    month = dt.strftime("%m")
                 except:
                     formatted_date = post["date"]
-                    year = "0000"
-                    month = "00"
                 
                 safe_date = html.escape(formatted_date)
+                full_content = post["content"]
+                
+                xml_filename = post['filename'].replace('.html', '.xml')
+                year = post['date'].split('-')[0]
+                month = post['date'].split('-')[1]
+                year_month_path = f"{year}/{month}/{xml_filename}"
+
+                # Ingen admin-knappar för public output
+                edit_delete_buttons_top = ""
+                edit_delete_buttons_bottom = ""
+
+                excerpt = get_excerpt(full_content, tags=post.get("tags"))
+                display_excerpt = excerpt.replace("[NOBR]", "").strip()
+                show_read_more = excerpt != full_content
+                
                 link = f"posts/{year}/{month}/{post['filename']}"
                 
-                # Generera reading_time_html
-                reading_time_html = ""
-                if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
-                    reading_time = post.get("reading_time", "")
-                    if reading_time:
-                        reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {post["reading_time"]}</span>'
-
+                read_more_html = ""
+                if show_read_more:
+                    read_more_html = f'<p><a href="{link}" class="read-more-link">Läs mer →</a></p>'
+                
+                summary_html = ""
+                summary = post.get("summary", "").strip()
+                if show_read_more and summary:
+                    summary_html = f'''<div class="ai-summary-wrapper">
+    <a class="toggle-summary" onclick="toggleSummary(event)">Visa AI-sammanfattning</a>
+    <div class="ai-summary-box">
+        <p>{html.escape(summary)}</p>
+    </div>
+</div>'''
+                
+                comment_link = ""
+                if not show_read_more:
+                    comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a></p>'
+                
                 tags_html = ""
                 if post.get("tags"):
                     tag_links = []
@@ -1478,34 +1503,15 @@ def rebuild_outputs():
                     tags_html = " ".join(tag_links)
                     tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
                 
-                # Ny excerpt-logik
-                excerpt = get_excerpt(post["content"], tags=post.get("tags"))
-                display_excerpt = excerpt.replace("[NOBR]", "").strip()
-                show_read_more = (excerpt != post["content"])
-                summary = post.get("summary", "").strip()
-                
-                # Bygga read_more_html
-                read_more_html = ""
-                if show_read_more:
-                    read_more_html = f'<p><a href="{link}" class="read-more-btn">Läs mer →</a></p>'
-                
-                # Bygga summary_html
-                summary_html = ""
-                if show_read_more and summary:
-                    summary_html = f'''<div class="ai-summary-wrapper">
-                    <a class="toggle-summary" onclick="toggleSummary(event)">Visa AI-sammanfattning</a>
-                    <div class="ai-summary-box">
-                             <p>{html.escape(summary)}</p>
-                        </div>
-                    </div>'''
-                
-                # Bygga comment_link
-                comment_link = ""
-                if not show_read_more:
-                    comment_link = f'<p><a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a></p>'
+                reading_time_html = ""
+                if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
+                    reading_time = post.get("reading_time", "")
+                    if reading_time:
+                        reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {reading_time}</span>'
                 
                 cards += f"""
         <div class="card">
+            {edit_delete_buttons_top}
             <h2><a href="{link}">{safe_title}</a></h2>
             <div class="date-tags-wrapper">
                 <span class="date">{safe_date}</span>
@@ -1516,12 +1522,12 @@ def rebuild_outputs():
             {summary_html}
             {comment_link}
             {tags_html}
+            {edit_delete_buttons_bottom}
         </div>"""
-            
+
             pagination = make_pagination_html(page_num, len(pages))
-            nav_html = create_nav(active_page='home', depth=0)
             
-            page_content = f"""<!doctype html>
+            page_html = f"""<!doctype html>
 <html lang="sv">
 <head>
     <meta charset="utf-8">
@@ -1542,20 +1548,38 @@ def rebuild_outputs():
         {cards}
         {pagination}
     </div>
-    <script>
-        function toggleSummary(event) {{
-            event.preventDefault();
-            const link = event.currentTarget;
-            const box = link.nextElementSibling;
-            
-            link.classList.toggle('open');
-            box.classList.toggle('show');
+
+<script>
+    function toggleSummary(event) {{
+        event.preventDefault();
+        const link = event.currentTarget;
+        const box = link.nextElementSibling;
+        
+        link.classList.toggle('open');
+        box.classList.toggle('show');
+    }}
+    
+    function deletePost(xmlPath) {{
+        if (confirm('Är du säker på att du vill radera detta inlägg?')) {{
+            fetch(`/delete/${{xmlPath}}`, {{ method: 'POST' }})
+                .then(r => r.json())
+                .then(data => {{
+                    if (data.success) {{
+                        alert('Inlägg raderat');
+                        location.reload();
+                    }} else {{
+                        alert('Fel: ' + data.error);
+                    }}
+                }})
+                .catch(e => alert('Fel: ' + e));
         }}
-    </script>
+    }}
+</script>
+
 </body>
 </html>"""
             
-            Path(f'output/page-{page_num}.html').write_text(page_content, encoding='utf-8')
+            Path(f'output/page-{page_num}.html').write_text(page_html, encoding='utf-8')
     
     # Generera individuella inlägg
     for post in posts:
@@ -1673,7 +1697,6 @@ def rebuild_outputs():
     rss_output_dir = Path('output/pages')
     rss_output_dir.mkdir(parents=True, exist_ok=True)
     (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
-
 
 
 
@@ -2059,7 +2082,8 @@ def export_site():
 @app.route("/page-<int:page_num>")
 @admin_only
 def paginated_index(page_num):
-    """Visa paginererad index (sida 2, 3, osv)"""
+    """Visa paginererad index (sida 2, 3, osv) - admin version med knappar"""
+    include_admin_nav = True
     try:
         posts = load_posts()
         pages = paginate_posts(posts, per_page=30)
@@ -2067,6 +2091,7 @@ def paginated_index(page_num):
         if page_num < 1 or page_num > len(pages):
             return "Sidan finns inte", 404
         
+        include_admin_nav = True  # Alltid True här eftersom routen är @admin_only
         nav_html = create_nav(active_page='home', depth=0)
         page_posts = pages[page_num - 1]
         
@@ -2087,15 +2112,43 @@ def paginated_index(page_num):
             safe_date = html.escape(formatted_date)
             full_content = post["content"]
             
+            # Extrahera år, månad och XML-filnamn från post
+            xml_filename = post['filename'].replace('.html', '.xml')
+            year = post['date'].split('-')[0]  # Från "YYYY-MM-DD"
+            month = post['date'].split('-')[1]
+            year_month_path = f"{year}/{month}/{xml_filename}"
+
+            # Admin-knappar överst
+            if include_admin_nav:
+                edit_delete_buttons_top = f'''<div class="admin-buttons">
+                <a href="/edit/{year_month_path}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+                <button onclick="deletePost('{year_month_path}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
+            </div>'''
+            else:
+                edit_delete_buttons_top = ""
+
+            # Admin-knappar i slutet
+            if include_admin_nav:
+                edit_delete_buttons_bottom = f'''<div class="admin-buttons" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                <a href="/edit/{year_month_path}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+            </div>'''
+            else:
+                edit_delete_buttons_bottom = ""
+
             # Hämta excerpt och bestäm om "Läs mer" ska visas
             excerpt = get_excerpt(full_content, tags=post.get("tags"))
             display_excerpt = excerpt.replace("[NOBR]", "").strip()
             show_read_more = excerpt != full_content
             
+            # Länk-konstruktion
+            if include_admin_nav:
+                link = f"/posts/{year}/{month}/{post['filename']}"
+            else:
+                link = f"posts/{year}/{month}/{post['filename']}"
+            
             # "Läs mer"-länk
             read_more_html = ""
             if show_read_more:
-                link = f"posts/{year}/{month}/{post['filename']}"
                 read_more_html = f'<p><a href="{link}" class="read-more-link">Läs mer →</a></p>'
             
             # "AI-sammanfattning"-box
@@ -2112,7 +2165,6 @@ def paginated_index(page_num):
             # Kommentarlänk (endast om INTE "Läs mer")
             comment_link = ""
             if not show_read_more:
-                link = f"posts/{year}/{month}/{post['filename']}"
                 comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a></p>'
             
             # Tags
@@ -2125,16 +2177,29 @@ def paginated_index(page_num):
                 tags_html = " ".join(tag_links)
                 tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
             
+            # Reading time
+            reading_time_html = ""
+            if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
+                reading_time = post.get("reading_time", "")
+                if reading_time:
+                    reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {reading_time}</span>'
+            
             cards += f"""
         <div class="card">
-            <h2><a href="posts/{year}/{month}/{post['filename']}">{safe_title}</a></h2>
-            <p class="date">{safe_date}</p>
+            {edit_delete_buttons_top}
+            <h2><a href="{link}">{safe_title}</a></h2>
+            <div class="date-tags-wrapper">
+                <span class="date">{safe_date}</span>
+                {reading_time_html}
+            </div>
             <div>{display_excerpt}</div>
             {read_more_html}
             {summary_html}
             {comment_link}
             {tags_html}
+            {edit_delete_buttons_bottom}
         </div>"""
+
         
         pagination = make_pagination_html(page_num, len(pages))
         
@@ -2160,21 +2225,39 @@ def paginated_index(page_num):
         {pagination}
     </div>
 
-    <script>
-        function toggleSummary(event) {{
-            event.preventDefault();
-            const link = event.currentTarget;
-            const box = link.nextElementSibling;
-            
-            link.classList.toggle('open');
-            box.classList.toggle('show');
+<script>
+    function toggleSummary(event) {{
+        event.preventDefault();
+        const link = event.currentTarget;
+        const box = link.nextElementSibling;
+        
+        link.classList.toggle('open');
+        box.classList.toggle('show');
+    }}
+    
+    function deletePost(xmlPath) {{
+        if (confirm('Är du säker på att du vill radera detta inlägg?')) {{
+            fetch(`/delete/${{xmlPath}}`, {{ method: 'POST' }})
+                .then(r => r.json())
+                .then(data => {{
+                    if (data.success) {{
+                        alert('Inlägg raderat');
+                        location.reload();
+                    }} else {{
+                        alert('Fel: ' + data.error);
+                    }}
+                }})
+                .catch(e => alert('Fel: ' + e));
         }}
-    </script>
+    }}
+</script>
+
 </body>
 </html>"""
     except Exception as e:
         print(f"Error in paginated_index: {e}")
         return f"Error: {str(e)}", 500
+
 
 
 
