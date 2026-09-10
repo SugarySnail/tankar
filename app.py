@@ -48,6 +48,26 @@ def slugify(text):
     slug = slug.strip('-')  # Ta bort ledande/avslutande bindestreck
     return slug
 
+def slugify_filename(text):
+    """Konverterar text till ett säkert HTML-filnamn (utan å, ä, ö)"""
+    import unicodedata
+    
+    # Normalisera och ta bort accenter/diakritiska tecken
+    text = unicodedata.normalize('NFKD', text)
+    text = text.encode('ascii', 'ignore').decode('ascii')
+    
+    # Gör gemener
+    slug = text.lower()
+    
+    # Ersätt mellanslag och speciella tecken med bindestreck
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = re.sub(r'\s+', '-', slug)
+    slug = re.sub(r'-+', '-', slug)
+    slug = slug.strip('-')
+    
+    return slug
+
+
 
 def escape_xml(text):
     """Escapar XML-specialtecken"""
@@ -460,7 +480,7 @@ def parse_post(xml_file):
             "content": root.findtext("content", ""), 
             "tags": tags,
             "tags_str": ", ".join(tags),
-            "filename": f"{date_part}-{slugify(title)}.html",
+            "filename": f"{date_part}-{slugify_filename(title)}.html",
             "xml_filename": str(relative_path),  
             "reading_time": reading_time,
         }
@@ -1626,12 +1646,15 @@ def rebuild_outputs():
     posts_without_poesi = [p for p in posts if "poesi" not in p.get("tags", [])]
     months = get_months_from_posts(posts_without_poesi) # ta inte med poesi i arkivet
     
+    tags_with_slugs = [{"name": tag, "slug": slugify(tag)} for tag in tags]
+
     archive_html = render_template("archive.html",
-                                   tags=tags,
+                                   tags=tags_with_slugs,
                                    months=months,
                                    site_title=SITE_TITLE,
                                    site_description=SITE_DESCRIPTION,
                                    nav_html=create_nav(active_page='tags', depth=1))
+
     
     archive_dir = Path('output/tags')
     archive_dir.mkdir(parents=True, exist_ok=True)
@@ -1652,11 +1675,15 @@ def rebuild_outputs():
                 post['year'] = dt.strftime("%Y")
                 post['month'] = dt.strftime("%m")
                 post['excerpt'] = extract_excerpt(html.unescape(post.get('content', '')), words=50)
+                # Extrahera bara titeldelen från filnamnet
+                post['title_slug'] = post['filename'].rsplit('-', 1)[-1].replace('.html', '')
             except Exception as e:
                 print(f"  Varning: Kunde inte skapa excerpt för {post['filename']}: {e}")
                 post['year'] = "0000"
                 post['month'] = "00"
                 post['excerpt'] = ""
+                post['title_slug'] = ""
+
         
         
         print(f"  Tag: {tag}, Slug: {tag_slug}, Inlägg: {len(filtered_posts)}")
