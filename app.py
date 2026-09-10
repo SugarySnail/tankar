@@ -427,8 +427,10 @@ def create_rss_file(posts, filename, tag=None):
 
 def generate_rss_feeds(posts):
     """Genererar rss.xml (max 30 senaste inlägg) och rss-ETIKETT.xml för varje etikett (max 30 per etikett)"""
-    
     MAX_RSS_ITEMS = 30
+    
+    # ← NYTT: Filtrera bort framtida inlägg
+    posts = [p for p in posts if is_post_published(p)]
     
     # Filtrera bort mikrobloggposter - behåll bara reguljära blogginlägg
     posts = [p for p in posts if not p.get('xml_filename', '').startswith('posts/micro/')]
@@ -453,6 +455,7 @@ def generate_rss_feeds(posts):
     # Generera huvudsaklig RSS (max 30 senaste inlägg)
     limited_main_posts = processed_posts[:MAX_RSS_ITEMS]
     create_rss_file(limited_main_posts, "rss.xml", None)
+
 
 
 
