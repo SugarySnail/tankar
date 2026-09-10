@@ -245,6 +245,10 @@ def load_posts(exclude_old_poetry=True):
     
     return published_posts
 
+def get_upcoming_posts(posts):
+    """Filtrerar och returnerar endast framtida inlägg"""
+    return [p for p in posts if not is_post_published(p)]
+
 
 def load_all_posts(exclude_old_poetry=True):
     """Ladda ALLA blogginlägg inklusive framtida (för admin)"""
@@ -309,7 +313,6 @@ def make_rss_page_html(posts):
     <header class="header">
         <div class="header-content">
             <h1>My Jakobsson</h1>
-            <p>tankar</p>
         </div>
     </header>
 
@@ -695,6 +698,9 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
     """Generera indexsida med pagination"""
     nav_html = create_nav(active_page='home', depth=0)
     
+    # Filtrera bort framtida inlägg
+    posts = [post for post in posts if is_post_published(post)]
+    
     # Dela upp inlägg i sidor
     pages = paginate_posts(posts, per_page)
     if not pages:
@@ -742,10 +748,6 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         except:
             year = "0000"
             month = "00"
-
-        # Kontrollera om inlägget är framtida
-        is_future = not is_post_published(post)
-        future_badge = '<span style="color: #ff9800; font-weight: bold; margin-left: 10px;">kommande</span>' if is_future else ""
 
         xml_filename = post.get("xml_filename", "")
         xml_filename_encoded = quote(xml_filename, safe='/')  # URL-koda med behållna slashar
@@ -802,7 +804,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         cards += f"""
         <div class="card">
             {edit_delete_buttons_top}
-            <h2><a href="{link}">{safe_title}{future_badge}</a></h2>
+            <h2><a href="{link}">{safe_title}</a></h2>
             <div class="date-tags-wrapper">
                 <span class="date">{safe_date}</span>
                 {reading_time_html}
@@ -826,7 +828,8 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
     <nav class="menu">
         <a href="/create">Skapa inlägg</a>
         <a href="/micro-create">Mikroinlägg</a>
-        <a href="/micro/admin">Admin</a>
+        <a href="/micro/admin">Mikroadmin</a>
+        <a href="/admin-upcoming">Kommande</a>
         <a href="/export">Exportera</a>
     </nav>"""
     else:
@@ -847,7 +850,6 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
     <header class="header">
         <div class="header-content">
             <h1>{SITE_TITLE}</h1>
-            <p>{SITE_DESCRIPTION}</p>
         </div>
     </header>
 {nav_section}
@@ -887,6 +889,102 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
 
 
 
+
+def make_upcoming_posts_html(posts):
+    """Generera admin-sida för kommande inlägg"""
+    nav_html = """
+    <nav class="menu">
+    <a href="/">Alla inlägg</a>
+    <a href="/create">Skapa inlägg</a>
+    <a href="/micro-create">Mikroinlägg</a>
+    <a href="/micro/admin">Mikroadmin</a>
+    <a href="/export">Exportera</a>
+    </nav>"""
+    
+    if not posts:
+        cards = '<div class="card"><p>Inga kommande inlägg.</p></div>'
+    else:
+        cards = ""
+        for post in posts:
+            safe_title = html.escape(post["title"])
+            try:
+                dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+                formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+            except:
+                formatted_date = post["date"]
+            safe_date = html.escape(formatted_date)
+            
+            # Extrahera excerpt
+            excerpt = get_excerpt(post["content"], tags=post.get("tags"))
+            display_excerpt = strip_nobr_marker(excerpt)
+            
+            # Tags-html
+            tags_html = ""
+            if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
+                tag_links = []
+                for tag in post["tags"]:
+                    tag_slug = tag.replace(" ", "-").lower()
+                    tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+                tags_html = " ".join(tag_links)
+            
+            xml_filename = post.get("xml_filename", "")
+            xml_filename_encoded = quote(xml_filename, safe='/')
+            
+            cards += f"""
+    <div class="card">
+    <div class="admin-buttons">
+    <a href="/edit/{xml_filename_encoded}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+    <button onclick="deletePost('{xml_filename_encoded}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
+    </div>
+    <h2>{safe_title}</h2>
+    <div class="date-tags-wrapper">
+    <span class="date">{safe_date}</span>
+    </div>
+    <div>{display_excerpt}</div>
+    <div class="comment-tags-wrapper">
+    <div class="tags">{tags_html}</div>
+    </div>
+    </div>"""
+    
+    return f"""<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<title>Kommande inlägg - Admin</title>
+</head>
+<body>
+<header class="header">
+<div class="header-content">
+<h1>{SITE_TITLE}</h1>
+
+</div>
+</header>
+{nav_html}
+<div class="grid">
+{cards}
+</div>
+<script>
+function deletePost(xmlFilename) {{
+if (confirm('Är du säker på att du vill ta bort detta inlägg? Detta kan inte ångras.')) {{
+fetch('/delete/' + xmlFilename, {{method: 'POST'}})
+.then(r => r.json())
+.then(data => {{
+if (data.success) {{
+alert('Inlägget är raderat');
+location.reload();
+}} else {{
+alert('Fel: ' + data.error);
+}}
+}})
+.catch(e => alert('Fel vid borttagning: ' + e));
+}}
+}}
+</script>
+</body>
+</html>"""
 
 
 
@@ -1137,7 +1235,6 @@ def make_microblog_html(posts):
 <header class="header">
 <div class="header-content">
 <h1>My Jakobsson</h1>
-<p>tankar</p>
 </div>
 </header>
 {nav_html}
@@ -1200,7 +1297,6 @@ def make_microblog_post_html(post, post_number):
 <header class="header">
 <div class="header-content">
 <h1>My Jakobsson</h1>
-<p>tankar</p>
 </div>
 </header>
 {nav_html}
@@ -1261,7 +1357,6 @@ def make_poesi_html():
     <header class="header">
         <div class="header-content">
             <h1>{SITE_TITLE}</h1>
-            <p>{SITE_DESCRIPTION}</p>
         </div>
     </header>
 
@@ -1298,7 +1393,6 @@ def make_om_html():
        <header class="header">
            <div class="header-content">
                <h1>My Jakobsson</h1>
-               <p>tankar</p>
            </div>
        </header>
        {nav_html}
@@ -1336,7 +1430,6 @@ def make_forum_html():
        <header class="header">
            <div class="header-content">
                <h1>My Jakobsson</h1>
-               <p>tankar</p>
            </div>
        </header>
        {nav_html}
@@ -1375,7 +1468,6 @@ def make_faq_html():
     <header class="header">
         <div class="header-content">
             <h1>{SITE_TITLE}</h1>
-            <p>{SITE_DESCRIPTION}</p>
         </div>
     </header>
     
@@ -1574,7 +1666,6 @@ def rebuild_outputs():
     <header class="header">
         <div class="header-content">
             <h1>{SITE_TITLE}</h1>
-            <p>{SITE_DESCRIPTION}</p>
         </div>
     </header>
     {nav_html}
@@ -1771,6 +1862,16 @@ def index():
     except Exception as e:
         print(f"Error in index route: {e}")
         return f"Error: {str(e)}", 500
+
+@app.route("/admin-upcoming")
+def admin_upcoming():
+    """Admin-sida för kommande inlägg"""
+    all_posts = load_all_posts()
+    upcoming_posts = get_upcoming_posts(all_posts)
+    upcoming_posts.sort(key=lambda x: x["date"], reverse=True)  # Sortera nyast först
+    
+    html_content = make_upcoming_posts_html(upcoming_posts)
+    return html_content
 
 @app.route('/delete/<path:xml_path>', methods=['POST'])
 @admin_only
@@ -2290,7 +2391,6 @@ def paginated_index(page_num):
     <header class="header">
         <div class="header-content">
             <h1>{SITE_TITLE}</h1>
-            <p>{SITE_DESCRIPTION}</p>
         </div>
     </header>
     {nav_html}
