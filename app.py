@@ -1,5 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from pathlib import Path
+from urllib.parse import quote
+from urllib.parse import unquote
 from datetime import datetime
 import html
 import re
@@ -746,12 +748,13 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         future_badge = '<span style="color: #ff9800; font-weight: bold; margin-left: 10px;">kommande</span>' if is_future else ""
 
         xml_filename = post.get("xml_filename", "")
+        xml_filename_encoded = quote(xml_filename, safe='/')  # URL-koda med behållna slashar
         
         # Admin-knappar överst
         if include_admin_nav:
             edit_delete_buttons_top = f'''<div class="admin-buttons">
-            <a href="/edit/{xml_filename}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
-            <button onclick="deletePost('{xml_filename}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
+            <a href="/edit/{xml_filename_encoded}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+            <button onclick="deletePost('{xml_filename_encoded}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
 </div>'''
         else:
             edit_delete_buttons_top = ""
@@ -759,7 +762,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         # Admin-knappar i slutet
         if include_admin_nav:
             edit_delete_buttons_bottom = f'''<div class="admin-buttons" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
-            <a href="/edit/{xml_filename}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+            <a href="/edit/{xml_filename_encoded}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
 </div>'''
         else:
             edit_delete_buttons_bottom = ""
@@ -880,6 +883,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
 
 </body>
 </html>""", pages
+
 
 
 
@@ -2011,12 +2015,13 @@ def create():
         print(f"Error in create: {e}")
         return f"Serverfel: {str(e)}", 500
 
-
 @app.route("/edit/<path:xml_path>", methods=["GET", "POST"])
 @admin_only
 def edit(xml_path):
     """Redigera befintligt inlägg"""
     try:
+        # Avkoda URL-kodad sökväg
+        xml_path = unquote(xml_path)
         xml_file = POSTS_DIR / xml_path
         
         # Säkerhetskontroll
@@ -2091,6 +2096,7 @@ def edit(xml_path):
         return f"Serverfel: {str(e)}", 500
 
 
+
 def remove_old_output_files(xml_path):
     """Tar bort gamla HTML-filer när XML-filnamn ändras"""
     old_basename = Path(xml_path).stem  # Filnamn utan .xml
@@ -2149,7 +2155,6 @@ def export_site():
         print(f"Error in export: {e}")
         return f"Exportfel: {str(e)}", 500
 
-
 @app.route("/page-<int:page_num>")
 @admin_only
 def paginated_index(page_num):
@@ -2183,17 +2188,15 @@ def paginated_index(page_num):
             safe_date = html.escape(formatted_date)
             full_content = post["content"]
             
-            # Extrahera år, månad och XML-filnamn från post
-            xml_filename = post['filename'].replace('.html', '.xml')
-            year = post['date'].split('-')[0]  # Från "YYYY-MM-DD"
-            month = post['date'].split('-')[1]
-            year_month_path = f"{year}/{month}/{xml_filename}"
+            # Hämta XML-filnamn från post (innehåller svenska tecken)
+            xml_filename = post.get("xml_filename", "")
+            xml_filename_encoded = quote(xml_filename, safe='/')  # URL-koda med behållna slashar
 
             # Admin-knappar överst
             if include_admin_nav:
                 edit_delete_buttons_top = f'''<div class="admin-buttons">
-                <a href="/edit/{year_month_path}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
-                <button onclick="deletePost('{year_month_path}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
+                <a href="/edit/{xml_filename_encoded}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+                <button onclick="deletePost('{xml_filename_encoded}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
             </div>'''
             else:
                 edit_delete_buttons_top = ""
@@ -2201,7 +2204,7 @@ def paginated_index(page_num):
             # Admin-knappar i slutet
             if include_admin_nav:
                 edit_delete_buttons_bottom = f'''<div class="admin-buttons" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
-                <a href="/edit/{year_month_path}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
+                <a href="/edit/{xml_filename_encoded}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
             </div>'''
             else:
                 edit_delete_buttons_bottom = ""
@@ -2328,6 +2331,7 @@ def paginated_index(page_num):
     except Exception as e:
         print(f"Error in paginated_index: {e}")
         return f"Error: {str(e)}", 500
+
 
 
 
