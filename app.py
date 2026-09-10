@@ -1309,7 +1309,7 @@ def make_om_html():
                <p>E-post: <a href="mailto:kontakt@myjak.net">kontakt@myjak.net</a></p>
 
                 <h2>Om webbplatsen</h2>
-                <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Tecknade bilden överst i mikrobloggen samt forumavataren är genererade av GPT 5.4 AI. Jag ser fram emot att en dag ha en inkomst och kunna betala en människa för att hjälpa mig med bilder och grafik, men för stunden så är det vad det är.</p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My, om inte annat tydligt anges. <b>Copyright råder</b>, men det förstår ni. Ni är vuxna människor!
+                <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Claude står också för AI-sammanfattningarna, som jag kurerar innan de används. Tecknade bilden överst i mikrobloggen samt forumavataren är genererade av GPT 5.4 AI. Jag ser fram emot att en dag ha en inkomst och kunna betala en människa för att hjälpa mig med bilder och grafik, men för stunden så är det vad det är.</p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My, om inte annat tydligt anges. <b>Copyright råder</b>, men det förstår ni. Ni är vuxna människor!
 
            </div>
           </div>
@@ -1680,7 +1680,7 @@ def rebuild_outputs():
                 post['month'] = dt.strftime("%m")
                 post['excerpt'] = extract_excerpt(html.unescape(post.get('content', '')), words=50)
                 # Extrahera bara titeldelen från filnamnet
-                post['title_slug'] = post['filename'].rsplit('-', 1)[-1].replace('.html', '')
+                post['title_slug'] = post['filename'].replace('.html', '')
             except Exception as e:
                 print(f"  Varning: Kunde inte skapa excerpt för {post['filename']}: {e}")
                 post['year'] = "0000"
