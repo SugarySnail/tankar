@@ -38,10 +38,15 @@ HYVOR_ID = os.environ.get('HYVOR_ID', '15846')
 # ============================================================================
 
 def slugify(text):
-    text = text.lower().strip()
-    text = re.sub(r"[^a-z0-9\s_-]", "", text)
-    text = re.sub(r"[\s_]+", "-", text)
-    return text
+    """Konverterar text till ett säkert filnamn (slug)"""
+    # Gör gemener, ersätt mellanslag och speciella tecken med bindestreck
+    slug = text.lower()
+    # Behåll svenska tecken men ersätt mellanslag
+    slug = re.sub(r'[^\w\säåäö-]', '', slug)  # Behåll ord, mellanslag, åäö, bindestreck
+    slug = re.sub(r'\s+', '-', slug)  # Ersätt mellanslag med bindestreck
+    slug = re.sub(r'-+', '-', slug)  # Ersätt flera bindestreck med ett
+    slug = slug.strip('-')  # Ta bort ledande/avslutande bindestreck
+    return slug
 
 
 def escape_xml(text):
@@ -2016,7 +2021,27 @@ def edit(xml_path):
             if not xml_file.exists():
                 return "Inlägget hittades inte", 404
             
-            save_post(title, date, content, tags, summary, str(xml_file))
+            # Generera nytt filnamn baserat på datum och rubrik
+            date_str = date.split("T")[0]  # Extrahera bara YYYY-MM-DD
+            new_filename = f"{date_str}-{slugify(title)}.xml"
+            
+            # Konstruera sökväg med samma mappstruktur (åååå/mm/)
+            year_month = xml_path.rsplit("/", 1)[0]  # 2026/09
+            new_xml_path = f"{year_month}/{new_filename}"
+            new_xml_file = POSTS_DIR / new_xml_path
+            
+            # Spara inlägget (med eventuellt nytt filnamn)
+            save_post(title, date, content, tags, summary, str(new_xml_file))
+            
+            # Om filnamnet ändrades, ta bort gamla filen och gamla HTML-filer
+            if str(xml_file) != str(new_xml_file):
+                if xml_file.exists():
+                    xml_file.unlink()  # Ta bort gamla XML-filen
+                    print(f"Tog bort gammal XML-fil: {xml_file}")
+                
+                # Ta bort gamla HTML-filer
+                remove_old_output_files(xml_path)
+            
             rebuild_outputs()
             
             return redirect("/")
@@ -2032,6 +2057,20 @@ def edit(xml_path):
     except Exception as e:
         print(f"Error in edit: {e}")
         return f"Serverfel: {str(e)}", 500
+
+
+def remove_old_output_files(xml_path):
+    """Tar bort gamla HTML-filer när XML-filnamn ändras"""
+    old_basename = Path(xml_path).stem  # Filnamn utan .xml
+    
+    # Sök i output-mappen och ta bort alla filer med gammalt basnamn
+    if OUTPUT_DIR.exists():
+        for html_file in OUTPUT_DIR.glob(f"**/*{old_basename}*.html"):
+            try:
+                html_file.unlink()
+                print(f"Tog bort gammal HTML-fil: {html_file}")
+            except Exception as e:
+                print(f"Kunde inte ta bort {html_file}: {e}")
 
 
 
