@@ -751,15 +751,19 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         # Läs mer-länk (visas bara om excerpt < full content)
         read_more_html = ""
         if show_read_more:
-            read_more_html = f'<p><a href="{link}" style="text-decoration: none; color: #0066cc; font-weight: bold;">Läs mer →</a></p>'
+            read_more_html = f'<p><a href="{link}" class="read-more-btn">Läs mer →</a></p>'
         
         # AI-sammanfattning (visas bara om det finns en summary och excerpt < full content)
         summary_html = ""
         if show_read_more and summary:
-            summary_html = f'''<div style="background-color: #f5f5f5; padding: 12px; border-left: 3px solid #0066cc; margin-top: 15px; border-radius: 3px;">
-                <strong style="display: block; margin-bottom: 8px; color: #0066cc;">AI-sammanfattning</strong>
-                <p style="margin: 0; color: #555; font-size: 0.95em; line-height: 1.5;">{html.escape(summary)}</p>
-            </div>'''
+            summary_html = f'''<div class="ai-summary-wrapper">
+                        <a class="toggle-summary" onclick="toggleSummary(this)">Visa AI-sammanfattning</a>
+                        <div class="ai-summary-box">
+                            <p>{html.escape(summary)}</p>
+                        </div>
+                    </div>'''
+
+
         
         cards += f"""
         <div class="card">
@@ -833,11 +837,18 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
                     .catch(e => alert('Fel vid borttagning: ' + e));
             }}
         }}
+
+        function toggleSummary(link) {{
+            const box = link.nextElementSibling;
+            box.classList.toggle('show');
+            link.classList.toggle('open');
+        }}
+
     </script>
+
+
 </body>
 </html>""", pages
-
-
 
 
 
@@ -1449,7 +1460,7 @@ def rebuild_outputs():
                     month = "00"
                 
                 safe_date = html.escape(formatted_date)
-                safe_content = post["content"]
+                link = f"posts/{year}/{month}/{post['filename']}"
                 
                 # Generera reading_time_html
                 reading_time_html = ""
@@ -1458,7 +1469,6 @@ def rebuild_outputs():
                     if reading_time:
                         reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {post["reading_time"]}</span>'
 
-                
                 tags_html = ""
                 if post.get("tags"):
                     tag_links = []
@@ -1468,15 +1478,43 @@ def rebuild_outputs():
                     tags_html = " ".join(tag_links)
                     tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
                 
-                # Ny sökväg: posts/YYYY/MM/filename.html
+                # Ny excerpt-logik
+                excerpt = get_excerpt(post["content"], tags=post.get("tags"))
+                display_excerpt = excerpt.replace("[NOBR]", "").strip()
+                show_read_more = (excerpt != post["content"])
+                summary = post.get("summary", "").strip()
+                
+                # Bygga read_more_html
+                read_more_html = ""
+                if show_read_more:
+                    read_more_html = f'<p><a href="{link}" class="read-more-btn">Läs mer →</a></p>'
+                
+                # Bygga summary_html
+                summary_html = ""
+                if show_read_more and summary:
+                    summary_html = f'''<div class="ai-summary-wrapper">
+                    <a class="toggle-summary" onclick="toggleSummary(event)">Visa AI-sammanfattning</a>
+                    <div class="ai-summary-box">
+                             <p>{html.escape(summary)}</p>
+                        </div>
+                    </div>'''
+                
+                # Bygga comment_link
+                comment_link = ""
+                if not show_read_more:
+                    comment_link = f'<p><a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a></p>'
+                
                 cards += f"""
         <div class="card">
-            <h2><a href="posts/{year}/{month}/{post['filename']}">{safe_title}</a></h2>
+            <h2><a href="{link}">{safe_title}</a></h2>
             <div class="date-tags-wrapper">
                 <span class="date">{safe_date}</span>
                 {reading_time_html}
             </div>
-            <div>{safe_content}</div>
+            <div>{display_excerpt}</div>
+            {read_more_html}
+            {summary_html}
+            {comment_link}
             {tags_html}
         </div>"""
             
@@ -1504,6 +1542,16 @@ def rebuild_outputs():
         {cards}
         {pagination}
     </div>
+    <script>
+        function toggleSummary(event) {{
+            event.preventDefault();
+            const link = event.currentTarget;
+            const box = link.nextElementSibling;
+            
+            link.classList.toggle('open');
+            box.classList.toggle('show');
+        }}
+    </script>
 </body>
 </html>"""
             
@@ -1625,6 +1673,7 @@ def rebuild_outputs():
     rss_output_dir = Path('output/pages')
     rss_output_dir.mkdir(parents=True, exist_ok=True)
     (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
+
 
 
 
@@ -2028,12 +2077,45 @@ def paginated_index(page_num):
             try:
                 dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
                 formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+                year = dt.strftime("%Y")
+                month = dt.strftime("%m")
             except:
                 formatted_date = post["date"]
+                year = "0000"
+                month = "00"
             
             safe_date = html.escape(formatted_date)
-            safe_content = post["content"]
+            full_content = post["content"]
             
+            # Hämta excerpt och bestäm om "Läs mer" ska visas
+            excerpt = get_excerpt(full_content, tags=post.get("tags"))
+            display_excerpt = excerpt.replace("[NOBR]", "").strip()
+            show_read_more = excerpt != full_content
+            
+            # "Läs mer"-länk
+            read_more_html = ""
+            if show_read_more:
+                link = f"posts/{year}/{month}/{post['filename']}"
+                read_more_html = f'<p><a href="{link}" class="read-more-link">Läs mer →</a></p>'
+            
+            # "AI-sammanfattning"-box
+            summary_html = ""
+            summary = post.get("summary", "").strip()
+            if show_read_more and summary:
+                summary_html = f'''<div class="ai-summary-wrapper">
+    <a class="toggle-summary" onclick="toggleSummary(event)">Visa AI-sammanfattning</a>
+    <div class="ai-summary-box">
+        <p>{html.escape(summary)}</p>
+    </div>
+</div>'''
+            
+            # Kommentarlänk (endast om INTE "Läs mer")
+            comment_link = ""
+            if not show_read_more:
+                link = f"posts/{year}/{month}/{post['filename']}"
+                comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a></p>'
+            
+            # Tags
             tags_html = ""
             if post.get("tags"):
                 tag_links = []
@@ -2045,9 +2127,12 @@ def paginated_index(page_num):
             
             cards += f"""
         <div class="card">
-            <h2><a href="posts/{post['filename']}">{safe_title}</a></h2>
+            <h2><a href="posts/{year}/{month}/{post['filename']}">{safe_title}</a></h2>
             <p class="date">{safe_date}</p>
-            <div>{safe_content}</div>
+            <div>{display_excerpt}</div>
+            {read_more_html}
+            {summary_html}
+            {comment_link}
             {tags_html}
         </div>"""
         
@@ -2074,11 +2159,23 @@ def paginated_index(page_num):
         {cards}
         {pagination}
     </div>
+
+    <script>
+        function toggleSummary(event) {{
+            event.preventDefault();
+            const link = event.currentTarget;
+            const box = link.nextElementSibling;
+            
+            link.classList.toggle('open');
+            box.classList.toggle('show');
+        }}
+    </script>
 </body>
 </html>"""
     except Exception as e:
         print(f"Error in paginated_index: {e}")
         return f"Error: {str(e)}", 500
+
 
 
 def _extract_year_month(posts):
