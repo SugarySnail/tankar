@@ -428,6 +428,7 @@ def parse_post(xml_file):
         
         title = root.findtext("title", "")
         date = root.findtext("date", "")
+        summary = root.findtext("summary", "")
         date_part = date.split("T")[0] if date else "0000-00-00"
         
         # Konvertera till relativ sökväg från POSTS_DIR
@@ -440,6 +441,7 @@ def parse_post(xml_file):
         return {
             "title": title,
             "date": date,
+            "summary": summary,
             "content": root.findtext("content", ""),
             "tags": tags,
             "tags_str": ", ".join(tags),
@@ -479,6 +481,7 @@ def get_post_by_xml_filename(xml_filename):
         
         title = root.findtext("title", "")
         date = root.findtext("date", "")
+        summary = root.findtext("summary", "")
         date_part = date.split("T")[0] if date else "0000-00-00"
         
         tags = []
@@ -539,7 +542,7 @@ def get_months_from_posts(posts):
 
 
 
-def save_post(title, date, content, tags_str, xml_filename=None):
+def save_post(title, date, content, tags_str, summary="", xml_filename=None):
     if not xml_filename:
         date_part = date.split("T")[0]
         slug = slugify(title)
@@ -575,6 +578,7 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     root = ET.Element("post")
     ET.SubElement(root, "title").text = title
     ET.SubElement(root, "date").text = date
+    ET.SubElement(root, "summary").text = summary
     ET.SubElement(root, "content").text = content
     tags_elem = ET.SubElement(root, "tags")
     for tag in tags:
@@ -582,6 +586,32 @@ def save_post(title, date, content, tags_str, xml_filename=None):
     
     tree = ET.ElementTree(root)
     tree.write(str(xml_filename), encoding="UTF-8", xml_declaration=True)
+
+
+def get_excerpt(content, nobr_marker="[NOBR]", tags=None):
+    """
+    Extrahera excerpt för indexsidan med stöd för [NOBR]-marker.
+    
+    För poesi-inlägg: returnera hela innehållet (ingen bryting)
+    Om [NOBR] finns: returnera hela innehållet (excerpt == full_content)
+    Annars: returnera två första paragrafer eller hela texten om kortare
+    """
+    # Om det är ett poesi-inlägg, visa alltid allt
+    if tags and 'poesi' in [t.lower() for t in tags]:
+        return content
+    
+    if nobr_marker in content:
+        # [NOBR] = kort inlägg, returnera allt utan att markera som "läs mer"
+        return content
+    
+    # Returnera två första paragrafer (eller allt om kortare)
+    paragraphs = content.split("\n\n")
+    if len(paragraphs) <= 2:
+        return content
+    else:
+        return "\n\n".join(paragraphs[:2])
+
+
 
 
 
@@ -651,7 +681,17 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
             formatted_date = post["date"]
         
         safe_date = html.escape(formatted_date)
-        safe_content = post["content"]
+        
+        # Extrahera excerpt och summary
+        excerpt = get_excerpt(post["content"], tags=post.get("tags"))
+        full_content = post["content"]
+        summary = post.get("summary", "").strip()
+        
+        # Ta bort [NOBR]-marker för display
+        display_excerpt = excerpt.replace("[NOBR]", "").strip()
+        
+        # Bestäm om vi ska visa "Läs mer"-länk (jämför utan marker)
+        show_read_more = excerpt != full_content
         
         tags_html = ""
         if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
@@ -699,7 +739,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
             link = f"posts/{year}/{month}/{post['filename']}"
         
         # Kommentera-länk
-        comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a>'
+        comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a>' if not show_read_more else ''
 
         # Generera reading_time_html (samma som i rebuild_outputs)
         reading_time_html = ""
@@ -707,6 +747,19 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
             reading_time = post.get("reading_time", "")
             if reading_time:
                 reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {reading_time}</span>'
+        
+        # Läs mer-länk (visas bara om excerpt < full content)
+        read_more_html = ""
+        if show_read_more:
+            read_more_html = f'<p><a href="{link}" style="text-decoration: none; color: #0066cc; font-weight: bold;">Läs mer →</a></p>'
+        
+        # AI-sammanfattning (visas bara om det finns en summary och excerpt < full content)
+        summary_html = ""
+        if show_read_more and summary:
+            summary_html = f'''<div style="background-color: #f5f5f5; padding: 12px; border-left: 3px solid #0066cc; margin-top: 15px; border-radius: 3px;">
+                <strong style="display: block; margin-bottom: 8px; color: #0066cc;">AI-sammanfattning</strong>
+                <p style="margin: 0; color: #555; font-size: 0.95em; line-height: 1.5;">{html.escape(summary)}</p>
+            </div>'''
         
         cards += f"""
         <div class="card">
@@ -716,7 +769,9 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
                 <span class="date">{safe_date}</span>
                 {reading_time_html}
             </div>
-            <div>{safe_content}</div>            
+            <div>{display_excerpt}</div>
+            {read_more_html}
+            {summary_html}
             <div class="comment-tags-wrapper">
                 <div class="comment-link">{comment_link}</div>
                 <div class="tags">{tags_html}</div>
@@ -781,6 +836,8 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
     </script>
 </body>
 </html>""", pages
+
+
 
 
 
@@ -1820,6 +1877,7 @@ def create():
             date = request.form.get("date", "").strip()
             content = request.form.get("content", "").strip()
             tags = request.form.get("tags", "").strip()
+            summary = request.form.get("summary", "").strip()
             
             if not all([title, date, content]):
                 return render_template("create.html", 
@@ -1833,7 +1891,7 @@ def create():
                                        error="Ogiltigt datumformat",
                                        default_date=datetime.now().strftime("%Y-%m-%dT%H:%M")), 400
             
-            save_post(title, date, content, tags)
+            save_post(title, date, content, tags, summary)
             rebuild_outputs()
             
             return redirect("/")
@@ -1863,6 +1921,7 @@ def edit(xml_path):
             date = request.form.get("date", "").strip()
             content = request.form.get("content", "").strip()
             tags = request.form.get("tags", "").strip()
+            summary = request.form.get("summary", "").strip()
             
             if not all([title, date, content]):
                 if xml_file.exists():
@@ -1885,7 +1944,7 @@ def edit(xml_path):
             if not xml_file.exists():
                 return "Inlägget hittades inte", 404
             
-            save_post(title, date, content, tags, str(xml_file))
+            save_post(title, date, content, tags, summary, str(xml_file))
             rebuild_outputs()
             
             return redirect("/")
