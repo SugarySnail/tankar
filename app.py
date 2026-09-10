@@ -631,6 +631,7 @@ def save_post(title, date, content, tags_str, summary="", xml_filename=None):
 def get_excerpt(content, nobr_marker="[NOBR]", tags=None):
     """
     Extrahera excerpt för indexsidan med stöd för [NOBR]-marker.
+    Stänger alla öppna HTML-taggar för att undvika bruten HTML.
     """
     # Om det är ett poesi-inlägg, visa alltid allt
     if tags and 'poesi' in [t.lower() for t in tags]:
@@ -643,11 +644,44 @@ def get_excerpt(content, nobr_marker="[NOBR]", tags=None):
     # Returnera två första paragrafer
     paragraphs = content.split("\n\n")
     excerpt = content if len(paragraphs) <= 2 else "\n\n".join(paragraphs[:2])
+    
+    # Stäng alla öppna HTML-taggar
+    excerpt = balance_html_tags(excerpt)
+    
     return strip_nobr_marker(excerpt)
 
 
-
-
+def balance_html_tags(html_content):
+    """
+    Stänger alla öppna HTML-taggar för att undvika bruten struktur.
+    """
+    import re
+    
+    # Hitta alla öppna och stängda taggar
+    open_tags = []
+    tag_pattern = r'<(/?)(\w+)(?:\s[^>]*)?>|</(\w+)>'
+    
+    for match in re.finditer(tag_pattern, html_content):
+        is_closing = match.group(1) == '/' or match.group(3)
+        tag_name = (match.group(2) or match.group(3)).lower()
+        
+        # Ignorera själv-avslutande taggar
+        if tag_name in ['br', 'hr', 'img', 'input', 'meta', 'link']:
+            continue
+        
+        if is_closing:
+            # Stängningstagg: ta bort matchande öppen tagg från stacken
+            if open_tags and open_tags[-1] == tag_name:
+                open_tags.pop()
+        else:
+            # Öppningstagg: lägg till på stacken
+            open_tags.append(tag_name)
+    
+    # Stäng alla återstående öppna taggar (omvänd ordning)
+    for tag in reversed(open_tags):
+        html_content += f'</{tag}>'
+    
+    return html_content
 
 
 
