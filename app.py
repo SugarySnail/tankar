@@ -59,6 +59,11 @@ def escape_xml(text):
         .replace("'", '&apos;'))
 
 
+def strip_nobr_marker(content):
+    """Tar bort [NOBR]-markern från innehåll"""
+    return content.replace("[NOBR]", "").strip()
+
+
 def process_images_in_content(content, tags_str=""):
     """Processar bilder och lägger till semantiska taggar baserat på innehållstyp"""
 
@@ -122,7 +127,11 @@ def process_content_for_rss(content):
     # Konvertera manuellt skrivna <br> till XML-standard <br/>, men skippa redan korrekta <br/>
     content = re.sub(r'<br(?!/)>', '<br/>', content, flags=re.IGNORECASE)
     
+    # Ta bort [NOBR]-marker innan RSS-output
+    content = strip_nobr_marker(content)
+    
     return content
+
 
 
 def calculate_reading_time(content):
@@ -448,7 +457,7 @@ def parse_post(xml_file):
             "title": title,
             "date": date,
             "summary": summary,
-            "content": root.findtext("content", ""),
+            "content": root.findtext("content", ""), 
             "tags": tags,
             "tags_str": ", ".join(tags),
             "filename": f"{date_part}-{slugify(title)}.html",
@@ -597,25 +606,21 @@ def save_post(title, date, content, tags_str, summary="", xml_filename=None):
 def get_excerpt(content, nobr_marker="[NOBR]", tags=None):
     """
     Extrahera excerpt för indexsidan med stöd för [NOBR]-marker.
-    
-    För poesi-inlägg: returnera hela innehållet (ingen bryting)
-    Om [NOBR] finns: returnera hela innehållet (excerpt == full_content)
-    Annars: returnera två första paragrafer eller hela texten om kortare
     """
     # Om det är ett poesi-inlägg, visa alltid allt
     if tags and 'poesi' in [t.lower() for t in tags]:
-        return content
+        return strip_nobr_marker(content)
     
     if nobr_marker in content:
-        # [NOBR] = kort inlägg, returnera allt utan att markera som "läs mer"
-        return content
+        # [NOBR] = kort inlägg, returnera allt utan marker
+        return strip_nobr_marker(content)
     
-    # Returnera två första paragrafer (eller allt om kortare)
+    # Returnera två första paragrafer
     paragraphs = content.split("\n\n")
-    if len(paragraphs) <= 2:
-        return content
-    else:
-        return "\n\n".join(paragraphs[:2])
+    excerpt = content if len(paragraphs) <= 2 else "\n\n".join(paragraphs[:2])
+    return strip_nobr_marker(excerpt)
+
+
 
 
 
@@ -694,7 +699,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         summary = post.get("summary", "").strip()
         
         # Ta bort [NOBR]-marker för display
-        display_excerpt = excerpt.replace("[NOBR]", "").strip()
+        display_excerpt = strip_nobr_marker(excerpt)
         
         # Bestäm om vi ska visa "Läs mer"-länk (jämför utan marker)
         show_read_more = excerpt != full_content
@@ -865,7 +870,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
 
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
-    safe_content = process_images_in_content(post["content"], post["tags_str"])
+    safe_content = process_images_in_content(strip_nobr_marker(post["content"]), post["tags_str"])
 
     try:
         dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
