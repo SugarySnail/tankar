@@ -914,9 +914,16 @@ def make_upcoming_posts_html(posts):
                 formatted_date = post["date"]
             safe_date = html.escape(formatted_date)
             
-            # Extrahera excerpt
+            # Extrahera excerpt och summary
             excerpt = get_excerpt(post["content"], tags=post.get("tags"))
+            full_content = post["content"]
+            summary = post.get("summary", "").strip()
+            
+            # Ta bort [NOBR]-marker för display
             display_excerpt = strip_nobr_marker(excerpt)
+            
+            # Bestäm om vi ska visa "Läs mer"-länk (jämför utan marker)
+            show_read_more = excerpt != full_content
             
             # Tags-html
             tags_html = ""
@@ -927,8 +934,40 @@ def make_upcoming_posts_html(posts):
                     tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
                 tags_html = " ".join(tag_links)
             
+            # Extrahera år och månad för länkstruktur
+            try:
+                dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+                year = dt.strftime("%Y")
+                month = dt.strftime("%m")
+            except:
+                year = "0000"
+                month = "00"
+            
             xml_filename = post.get("xml_filename", "")
             xml_filename_encoded = quote(xml_filename, safe='/')
+            link = f"/posts/{year}/{month}/{post['filename']}"
+            
+            # Generera reading_time_html
+            reading_time_html = ""
+            if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
+                reading_time = post.get("reading_time", "")
+                if reading_time:
+                    reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {reading_time}</span>'
+            
+            # Läs mer-länk (visas bara om excerpt < full content)
+            read_more_html = ""
+            if show_read_more:
+                read_more_html = f'<p style="color:red">Trunkerat. Använd [NOBR].</p>'
+            
+            # AI-sammanfattning (visas bara om det finns en summary och excerpt < full content)
+            summary_html = ""
+            if show_read_more and summary:
+                summary_html = f'''<div class="ai-summary-wrapper">
+                            <a class="toggle-summary" onclick="toggleSummary(this)">Visa AI-sammanfattning</a>
+                            <div class="ai-summary-box">
+                                <p>{html.escape(summary)}</p>
+                            </div>
+                        </div>'''
             
             cards += f"""
     <div class="card">
@@ -936,11 +975,14 @@ def make_upcoming_posts_html(posts):
     <a href="/edit/{xml_filename_encoded}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>
     <button onclick="deletePost('{xml_filename_encoded}')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>
     </div>
-    <h2>{safe_title}</h2>
+    <h2><a href="{link}">{safe_title}</a></h2>
     <div class="date-tags-wrapper">
     <span class="date">{safe_date}</span>
+    {reading_time_html}
     </div>
     <div>{display_excerpt}</div>
+    {read_more_html}
+    {summary_html}
     <div class="comment-tags-wrapper">
     <div class="tags">{tags_html}</div>
     </div>
@@ -959,7 +1001,6 @@ def make_upcoming_posts_html(posts):
 <header class="header">
 <div class="header-content">
 <h1>{SITE_TITLE}</h1>
-
 </div>
 </header>
 {nav_html}
@@ -982,9 +1023,16 @@ alert('Fel: ' + data.error);
 .catch(e => alert('Fel vid borttagning: ' + e));
 }}
 }}
+
+function toggleSummary(link) {{
+const box = link.nextElementSibling;
+box.classList.toggle('show');
+link.classList.toggle('open');
+}}
 </script>
 </body>
 </html>"""
+
 
 
 
