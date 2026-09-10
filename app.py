@@ -957,7 +957,8 @@ def make_upcoming_posts_html(posts):
             display_excerpt = strip_nobr_marker(excerpt)
             
             # Bestäm om vi ska visa "Läs mer"-länk (jämför utan marker)
-            show_read_more = excerpt != full_content
+            full_content_stripped = strip_nobr_marker(full_content)
+            show_read_more = excerpt != full_content_stripped
             
             # Tags-html
             tags_html = ""
@@ -1066,6 +1067,7 @@ link.classList.toggle('open');
 </script>
 </body>
 </html>"""
+
 
 
 
