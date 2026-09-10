@@ -469,12 +469,13 @@ def parse_post(xml_file):
         title = root.findtext("title", "")
         date = root.findtext("date", "")
         summary = root.findtext("summary", "")
+        nobr = root.findtext("nobr", "false") == "true"  # ← NYTT
         date_part = date.split("T")[0] if date else "0000-00-00"
         
         # Konvertera till relativ sökväg från POSTS_DIR
         xml_path = Path(xml_file)
         relative_path = xml_path.relative_to(POSTS_DIR)
-
+        
         # lästid
         reading_time = calculate_reading_time(root.findtext("content", ""))
         
@@ -482,16 +483,18 @@ def parse_post(xml_file):
             "title": title,
             "date": date,
             "summary": summary,
-            "content": root.findtext("content", ""), 
+            "content": root.findtext("content", ""),
             "tags": tags,
             "tags_str": ", ".join(tags),
             "filename": f"{date_part}-{slugify_filename(title)}.html",
-            "xml_filename": str(relative_path),  
+            "xml_filename": str(relative_path),
             "reading_time": reading_time,
+            "nobr": nobr,  # ← NYTT
         }
     except Exception as e:
         print(f"Error parsing {xml_file}: {e}")
         return None
+
 
 
 from datetime import datetime
@@ -582,7 +585,7 @@ def get_months_from_posts(posts):
 
 
 
-def save_post(title, date, content, tags_str, summary="", xml_filename=None):
+def save_post(title, date, content, tags, summary="", xml_filename=None, nobr=False):
     if not xml_filename:
         date_part = date.split("T")[0]
         slug = slugify(title)
@@ -598,10 +601,13 @@ def save_post(title, date, content, tags_str, summary="", xml_filename=None):
     else:
         xml_filename = Path(xml_filename)
     
-    # Ersätta ” med "
+    # Ersätta " med "
     content = content.replace('=”', '="')
     content = content.replace('”>', '">')
-    content = process_images_in_content(content, tags_str)
+    content = process_images_in_content(content, tags) 
+    
+    # Ta bort gamla [NOBR]-marker från innehållet
+    content = content.replace("[NOBR]", "").strip()
     
     has_block_element = (any(content.strip().startswith(f'<{tag}')
         for tag in ['div', 'p', 'article', 'section', 'blockquote']) or
@@ -614,41 +620,40 @@ def save_post(title, date, content, tags_str, summary="", xml_filename=None):
         if not content.endswith('</p>'):
             content = f'{content}</p>'
     
-    tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
+    tags_list = [tag.strip() for tag in tags.split(",") if tag.strip()]  
     root = ET.Element("post")
     ET.SubElement(root, "title").text = title
     ET.SubElement(root, "date").text = date
     ET.SubElement(root, "summary").text = summary
     ET.SubElement(root, "content").text = content
+    ET.SubElement(root, "nobr").text = "true" if nobr else "false"
     tags_elem = ET.SubElement(root, "tags")
-    for tag in tags:
+    for tag in tags_list:  
         ET.SubElement(tags_elem, "tag").text = tag
     
     tree = ET.ElementTree(root)
     tree.write(str(xml_filename), encoding="UTF-8", xml_declaration=True)
 
 
-def get_excerpt(content, nobr_marker="[NOBR]", tags=None):
+
+
+def get_excerpt(content, tags=None, nobr=False):
     """
-    Extrahera excerpt för indexsidan med stöd för [NOBR]-marker.
-    Stänger alla öppna HTML-taggar för att undvika bruten HTML.
+    Extrahera excerpt för indexsidan med stöd för nobr-flagga.
     """
     # Om det är ett poesi-inlägg, visa alltid allt
     if tags and 'poesi' in [t.lower() for t in tags]:
-        return strip_nobr_marker(content)
+        return content
     
-    if nobr_marker in content:
-        # [NOBR] = kort inlägg, returnera allt utan marker
-        return strip_nobr_marker(content)
+    if nobr:
+        # nobr = kort inlägg, returnera allt
+        return content
     
     # Returnera två första paragrafer
     paragraphs = content.split("\n\n")
     excerpt = content if len(paragraphs) <= 2 else "\n\n".join(paragraphs[:2])
-    
-    # Stäng alla öppna HTML-taggar
-    excerpt = balance_html_tags(excerpt)
-    
-    return strip_nobr_marker(excerpt)
+    return excerpt
+
 
 
 def balance_html_tags(html_content):
@@ -756,15 +761,14 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         safe_date = html.escape(formatted_date)
         
         # Extrahera excerpt och summary
-        excerpt = get_excerpt(post["content"], tags=post.get("tags"))
+        excerpt = get_excerpt(post["content"], tags=post.get("tags"), nobr=post.get("nobr", False))
+        excerpt = balance_html_tags(excerpt)  # ← Stäng alla öppna taggar
         full_content = post["content"]
         summary = post.get("summary", "").strip()
         
-        # Ta bort [NOBR]-marker för display
-        display_excerpt = strip_nobr_marker(excerpt)
         
-        # Bestäm om vi ska visa "Läs mer"-länk (jämför utan marker)
-        show_read_more = excerpt != full_content
+        # Bestäm om vi ska visa "Läs mer"-länk
+        show_read_more = not post.get("nobr", False) and excerpt != full_content
         
         tags_html = ""
         if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
@@ -843,7 +847,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
                 <span class="date">{safe_date}</span>
                 {reading_time_html}
             </div>
-            <div>{display_excerpt}</div>
+            <div>{excerpt}</div>
             {read_more_html}
             {summary_html}
             <div class="comment-tags-wrapper">
@@ -923,7 +927,6 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
 
 
 
-
 def make_upcoming_posts_html(posts):
     """Generera admin-sida för kommande inlägg"""
     nav_html = """
@@ -949,16 +952,14 @@ def make_upcoming_posts_html(posts):
             safe_date = html.escape(formatted_date)
             
             # Extrahera excerpt och summary
-            excerpt = get_excerpt(post["content"], tags=post.get("tags"))
+            excerpt = get_excerpt(post["content"], tags=post.get("tags"), nobr=post.get("nobr", False))
+            excerpt = balance_html_tags(excerpt)  # ← Stäng alla öppna taggar
             full_content = post["content"]
             summary = post.get("summary", "").strip()
+
             
-            # Ta bort [NOBR]-marker för display
-            display_excerpt = strip_nobr_marker(excerpt)
-            
-            # Bestäm om vi ska visa "Läs mer"-länk (jämför utan marker)
-            full_content_stripped = strip_nobr_marker(full_content)
-            show_read_more = excerpt != full_content_stripped
+            # Bestäm om vi ska visa "Läs mer"-länk
+            show_read_more = not post.get("nobr", False) and excerpt != full_content
             
             # Tags-html
             tags_html = ""
@@ -992,7 +993,7 @@ def make_upcoming_posts_html(posts):
             # Läs mer-länk (visas bara om excerpt < full content)
             read_more_html = ""
             if show_read_more:
-                read_more_html = f'<p style="color:red">Trunkerat. Använd [NOBR].</p>'
+                read_more_html = f'<p style="color:red">Trunkerat. Kryssa i "Kort inlägg" för att visa fullständigt innehål.</p>'
             
             # AI-sammanfattning (visas bara om det finns en summary och excerpt < full content)
             summary_html = ""
@@ -1015,7 +1016,7 @@ def make_upcoming_posts_html(posts):
     <span class="date">{safe_date}</span>
     {reading_time_html}
     </div>
-    <div>{display_excerpt}</div>
+    <div>{excerpt}</div>
     {read_more_html}
     {summary_html}
     <div class="comment-tags-wrapper">
@@ -1067,6 +1068,7 @@ link.classList.toggle('open');
 </script>
 </body>
 </html>"""
+
 
 
 
@@ -1651,12 +1653,11 @@ def rebuild_outputs():
     Path('output/index.html').write_text(index_html, encoding='utf-8')
     
     # Generera övriga paginerande sidor (sida 2, 3, osv)
-    # Eftersom paginated_index() är @admin_only, genererar vi HTML direkt här
     if len(pages) > 1:
         for page_num in range(2, len(pages) + 1):
             nav_html = create_nav(active_page='home', depth=0)
             page_posts = pages[page_num - 1]
-            include_admin_nav = False  # Ingen admin-nav för statiska filer
+            include_admin_nav = False
             
             cards = ""
             for post in page_posts:
@@ -1676,13 +1677,12 @@ def rebuild_outputs():
                 month = post['date'].split('-')[1]
                 year_month_path = f"{year}/{month}/{xml_filename}"
 
-                # Ingen admin-knappar för public output
                 edit_delete_buttons_top = ""
                 edit_delete_buttons_bottom = ""
 
-                excerpt = get_excerpt(full_content, tags=post.get("tags"))
-                display_excerpt = excerpt.replace("[NOBR]", "").strip()
-                show_read_more = excerpt != full_content
+                excerpt = get_excerpt(full_content, tags=post.get("tags"), nobr=post.get("nobr", False))
+                excerpt = balance_html_tags(excerpt)  # ← Stäng alla öppna taggar
+                show_read_more = not post.get("nobr", False) and excerpt != full_content
                 
                 link = f"posts/{year}/{month}/{post['filename']}"
                 
@@ -1727,7 +1727,7 @@ def rebuild_outputs():
                 <span class="date">{safe_date}</span>
                 {reading_time_html}
             </div>
-            <div>{display_excerpt}</div>
+            <div>{excerpt}</div>
             {read_more_html}
             {summary_html}
             {comment_link}
@@ -1789,6 +1789,7 @@ def rebuild_outputs():
 </html>"""
             
             Path(f'output/page-{page_num}.html').write_text(page_html, encoding='utf-8')
+
     
     # Generera individuella inlägg
     for post in posts:
@@ -1913,6 +1914,7 @@ def rebuild_outputs():
     rss_output_dir = Path('output/pages')
     rss_output_dir.mkdir(parents=True, exist_ok=True)
     (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
+
 
 
 
@@ -2176,6 +2178,7 @@ def create():
             content = request.form.get("content", "").strip()
             tags = request.form.get("tags", "").strip()
             summary = request.form.get("summary", "").strip()
+            nobr = 'nobr' in request.form 
             
             if not all([title, date, content]):
                 return render_template("create.html", 
@@ -2189,7 +2192,7 @@ def create():
                                        error="Ogiltigt datumformat",
                                        default_date=datetime.now().strftime("%Y-%m-%dT%H:%M")), 400
             
-            save_post(title, date, content, tags, summary)
+            save_post(title, date, content, tags, summary, nobr=nobr)
             rebuild_outputs()
             
             return redirect("/")
@@ -2221,6 +2224,7 @@ def edit(xml_path):
             content = request.form.get("content", "").strip()
             tags = request.form.get("tags", "").strip()
             summary = request.form.get("summary", "").strip()
+            nobr = 'nobr' in request.form
             
             if not all([title, date, content]):
                 if xml_file.exists():
@@ -2252,8 +2256,8 @@ def edit(xml_path):
             new_xml_path = f"{year_month}/{new_filename}"
             new_xml_file = POSTS_DIR / new_xml_path
             
-            # Spara inlägget (med eventuellt nytt filnamn)
-            save_post(title, date, content, tags, summary, str(new_xml_file))
+            # Spara inlägget (med eventuellt nytt filnamn) ← FIXA DENNA RAD
+            save_post(title, date, content, tags, summary, xml_filename=str(new_xml_file), nobr=nobr)
             
             # Om filnamnet ändrades, ta bort gamla filen och gamla HTML-filer
             if str(xml_file) != str(new_xml_file):
@@ -2279,6 +2283,7 @@ def edit(xml_path):
     except Exception as e:
         print(f"Error in edit: {e}")
         return f"Serverfel: {str(e)}", 500
+
 
 
 
@@ -2395,9 +2400,10 @@ def paginated_index(page_num):
                 edit_delete_buttons_bottom = ""
 
             # Hämta excerpt och bestäm om "Läs mer" ska visas
-            excerpt = get_excerpt(full_content, tags=post.get("tags"))
-            display_excerpt = excerpt.replace("[NOBR]", "").strip()
-            show_read_more = excerpt != full_content
+            excerpt = get_excerpt(full_content, tags=post.get("tags"), nobr=post.get("nobr", False))
+            excerpt = balance_html_tags(excerpt)  # ← Stäng alla öppna taggar
+            show_read_more = not post.get("nobr", False) and excerpt != full_content
+
             
             # Länk-konstruktion
             if include_admin_nav:
@@ -2451,7 +2457,7 @@ def paginated_index(page_num):
                 <span class="date">{safe_date}</span>
                 {reading_time_html}
             </div>
-            <div>{display_excerpt}</div>
+            <div>{excerpt}</div>
             {read_more_html}
             {summary_html}
             {comment_link}
@@ -2515,6 +2521,7 @@ def paginated_index(page_num):
     except Exception as e:
         print(f"Error in paginated_index: {e}")
         return f"Error: {str(e)}", 500
+
 
 
 
