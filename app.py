@@ -1075,10 +1075,6 @@ link.classList.toggle('open');
 
 
 
-
-
-
-
 def make_post_html(post, include_admin_nav=False):
     safe_title = html.escape(post["title"])
     safe_content = process_images_in_content(strip_nobr_marker(post["content"]), post["tags_str"])
@@ -1168,6 +1164,79 @@ def make_post_html(post, include_admin_nav=False):
 
 </body>
 </html>"""
+
+
+def generate_404_pages():
+    """
+    Genererar 404.html (index.html) i alla nödvändiga output-kataloger.
+    Skapar endast mappar för år och månader som faktiskt finns i /posts XML-filerna.
+    """
+    from pathlib import Path
+    
+    posts_dir = BASE_DIR / 'posts'
+    micro_dir = BASE_DIR / 'posts' / 'micro'
+    
+    year_months_posts = set()
+    years_posts = set()
+    year_months_micro = set()
+    years_micro = set()
+    
+    # Sök i /posts/ÅÅÅÅ/MM för vanliga inlägg
+    for xml_file in posts_dir.glob('????/??/*.xml'):
+        parts = xml_file.parent.parts[-2:]
+        if len(parts) == 2:
+            year, month = parts
+            years_posts.add(year)
+            year_months_posts.add((year, month))
+    
+    # Sök i /posts/micro/ÅÅÅÅ/MM för microinlägg
+    for xml_file in micro_dir.glob('????/??/*.xml'):
+        parts = xml_file.parent.parts[-2:]
+        if len(parts) == 2:
+            year, month = parts
+            years_micro.add(year)
+            year_months_micro.add((year, month))
+    
+    # Definiera alla kataloger där 404.html ska skapas
+    directories_to_create = [
+        'output/pages',
+        'output/posts',
+    ]
+    
+    for year in sorted(years_posts):
+        directories_to_create.append(f'output/posts/{year}')
+    
+    for year, month in sorted(year_months_posts):
+        directories_to_create.append(f'output/posts/{year}/{month}')
+    
+    for year in sorted(years_micro):
+        directories_to_create.append(f'output/micro/{year}')
+    
+    for year, month in sorted(year_months_micro):
+        directories_to_create.append(f'output/micro/{year}/{month}')
+    
+    # Skapa kataloger och 404-filer
+    for dir_path in sorted(set(directories_to_create)):
+        full_path = BASE_DIR / dir_path
+        full_path.mkdir(parents=True, exist_ok=True)
+        
+        depth = dir_path.count('/')
+        relative_prefix = '../' * depth
+        
+        css_path = f'{relative_prefix}css/style.css'
+        home_path = f'{relative_prefix}index.html'
+        
+        template_path = BASE_DIR / 'templates' / '404.html'
+        if not template_path.exists():
+            continue
+        
+        html_content = template_path.read_text(encoding='utf-8')
+        html_content = html_content.replace('{{ css_path }}', css_path)
+        html_content = html_content.replace('{{ home_path }}', home_path)
+        
+        output_file = full_path / 'index.html'
+        output_file.write_text(html_content, encoding='utf-8')
+
 
 
 
@@ -1649,6 +1718,10 @@ def extract_excerpt(post_content, words=50):
 
 def rebuild_outputs():
     """Regenerera alla statiska HTML-filer"""
+
+    # Generera 404-sidorna först
+    generate_404_pages()
+
     posts = load_posts(exclude_old_poetry=True)
     
     # Generera blogg-sidor med pagination
