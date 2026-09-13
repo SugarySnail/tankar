@@ -88,7 +88,10 @@ def strip_nobr_marker(content):
 
 def process_images_in_content(content, tags_str=""):
     """Processar bilder och lägger till semantiska taggar baserat på innehållstyp"""
-
+    
+    # Normalisera alla krulliga citationstecken till raka
+    content = content.replace('”', '"')  
+    
     # Kontrollera om inlägget har taggen "poesi"
     tags_list = [tag.strip().lower() for tag in tags_str.split(',')]
     is_poetry = 'poesi' in tags_list
@@ -100,18 +103,28 @@ def process_images_in_content(content, tags_str=""):
     elif not is_poetry and not content.strip().startswith('<'):
         content = f'<p>{content}</p>'
     
-    # Processa bilder med responsiv CSS
+    # Processa bilder - behåll alla befintliga attribut
     def replace_img(match):
         img_tag = match.group(0)
+        
+        # Extrahera src
         src_match = re.search(r'src=["\']([^"\']+)["\']', img_tag)
         if not src_match:
             return img_tag
-        src = src_match.group(1)
-        return f'<img src="{src}" style="max-width: 100%; height: auto; display: block; margin: 1rem 0;">'
+        
+        # Kontrollera om det redan finns style-attribut
+        if 'style=' in img_tag:
+            # Behåll befintlig style och lägg bara till vår CSS om den saknas
+            if 'max-width' not in img_tag:
+                img_tag = img_tag.replace('style="', 'style="max-width: 100%; height: auto; ')
+            return img_tag
+        else:
+            # Lägg till style-attribut utan att ta bort något annat
+            return img_tag.replace('>', ' style="max-width: 100%; height: auto; display: block; margin: 1rem 0;">', 1)
     
     content = re.sub(r'<img[^>]*/?>', replace_img, content)
-    
     return content
+
 
 
 
@@ -604,7 +617,7 @@ def save_post(title, date, content, tags, summary="", xml_filename=None, nobr=Fa
     else:
         xml_filename = Path(xml_filename)
     
-    # Ersätta " med "
+    # Ersätta ” med "
     content = content.replace('=”', '="')
     content = content.replace('”>', '">')
     content = process_images_in_content(content, tags) 
@@ -1543,7 +1556,7 @@ def make_om_html():
    <head>
        <meta charset="UTF-8">
        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-       <title>Kontakt och info om webbplatsen | My Jakobsson</title>
+       <title>Kontakt och info | My Jakobsson</title>
        <link rel="stylesheet" href="../css/style.css">
        <link rel="icon" type="image/x-icon" href="/favicon.ico">
    </head>
@@ -1560,6 +1573,9 @@ def make_om_html():
                <h2>Kontakt</h2>
                <p>E-post: <a href="mailto:kontakt@myjak.net">kontakt@myjak.net</a></p>
 
+ <h2>Om My</h2>
+<p>Jag som roddar med den här sidan är 45 år gammal, poet och hemmastad i Uppsala. Jag är lika upplyst som Siddharta och verkar också ha gått och blivit ett orakel, men verkar mest sia om hur jävla viktig jag tror att jag själv är. Jag tycker väldigt mycket om mig själv.
+</p>
                 <h2>Om webbplatsen</h2>
                 <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Claude står också för AI-sammanfattningarna, som jag kurerar innan de används. Tecknade bilden överst i mikrobloggen samt forumavataren är genererade av GPT 5.4 AI. Jag ser fram emot att en dag ha en inkomst och kunna betala en människa för att hjälpa mig med bilder och grafik, men för stunden så är det vad det är.</p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My, om inte annat tydligt anges. <b>Copyright råder</b>, men det förstår ni. Ni är vuxna människor!
 
