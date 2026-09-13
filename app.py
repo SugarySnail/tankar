@@ -88,42 +88,55 @@ def strip_nobr_marker(content):
 
 def process_images_in_content(content, tags_str=""):
     """Processar bilder och lägger till semantiska taggar baserat på innehållstyp"""
-    
-    # Normalisera alla krulliga citationstecken till raka
-    content = content.replace('”', '"')  
-    
+
     # Kontrollera om inlägget har taggen "poesi"
     tags_list = [tag.strip().lower() for tag in tags_str.split(',')]
     is_poetry = 'poesi' in tags_list
-    
+
     # Om det är poesi och inte redan wrapped, lägg till poem-div
     if is_poetry and not content.strip().startswith('<div role="doc-poem"'):
         content = f'<div role="doc-poem" class="poem-line">{content}</div>'
+
     # Annars, om det inte börjar med HTML-tag, lägg till <p>
     elif not is_poetry and not content.strip().startswith('<'):
         content = f'<p>{content}</p>'
-    
+
     # Processa bilder - behåll alla befintliga attribut
     def replace_img(match):
         img_tag = match.group(0)
-        
-        # Extrahera src
+
+        # Normalisera citationstecken ENDAST i den aktuella <img>-taggen
+        img_tag = img_tag.replace('”', '"')
+        img_tag = img_tag.replace('”', '"')
+
+        # Extrahera src efter normaliseringen
         src_match = re.search(r'src=["\']([^"\']+)["\']', img_tag)
         if not src_match:
             return img_tag
-        
+
         # Kontrollera om det redan finns style-attribut
         if 'style=' in img_tag:
             # Behåll befintlig style och lägg bara till vår CSS om den saknas
             if 'max-width' not in img_tag:
-                img_tag = img_tag.replace('style="', 'style="max-width: 100%; height: auto; ')
+                img_tag = re.sub(
+                    r'style=["\']',
+                    'style="max-width: 100%; height: auto; ',
+                    img_tag,
+                    count=1
+                )
             return img_tag
-        else:
-            # Lägg till style-attribut utan att ta bort något annat
-            return img_tag.replace('>', ' style="max-width: 100%; height: auto; display: block; margin: 1rem 0;">', 1)
-    
-    content = re.sub(r'<img[^>]*/?>', replace_img, content)
+
+        # Lägg till style-attribut utan att ta bort något annat
+        return img_tag.replace(
+            '>',
+            ' style="max-width: 100%; height: auto; display: block; margin: 1rem 0;">',
+            1
+        )
+
+    content = re.sub(r'<img\b[^>]*/?>', replace_img, content, flags=re.IGNORECASE)
+
     return content
+
 
 
 
