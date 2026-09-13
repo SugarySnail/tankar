@@ -1022,7 +1022,7 @@ def make_upcoming_posts_html(posts):
             # Läs mer-länk (visas bara om excerpt < full content)
             read_more_html = ""
             if show_read_more:
-                read_more_html = f'<p style="color:red">Trunkerat. Kryssa i "Kort inlägg" för att visa fullständigt innehål.</p>'
+                read_more_html = f'<p style="color:red">Trunkerat. Kryssa i "Kort inlägg" för att visa fullständigt innehåll.</p>'
             
             # AI-sammanfattning (visas bara om det finns en summary och excerpt < full content)
             summary_html = ""
@@ -1353,6 +1353,11 @@ def save_microblog_post(content):
     year = now.strftime('%Y')
     month = now.strftime('%m')
     
+    # Ersätta ” med "
+    content = content.replace('=”', '="')
+    content = content.replace('”>', '">')
+    content = process_images_in_content(content)  
+    
     # Skapa mapp-struktur posts/micro/YYYY/MM
     micro_dir = MICRO_DIR / year / month
     micro_dir.mkdir(parents=True, exist_ok=True)
@@ -1368,6 +1373,7 @@ def save_microblog_post(content):
     
     tree = ET.ElementTree(root)
     tree.write(str(filepath), encoding='utf-8', xml_declaration=True)
+
 
 
 
@@ -2190,6 +2196,11 @@ def micro_edit(post_id):
                                        post=post,
                                        error='Inlägget är för långt (max 5000 tecken)'), 400
             
+            # Ersätta ” med " och processa bilder
+            new_content = new_content.replace('=”', '="')
+            new_content = new_content.replace('”>', '">')
+            new_content = process_images_in_content(new_content)
+            
             # Uppdatera XML-filen
             if xml_file and xml_file.exists():
                 tree = ET.parse(xml_file)
@@ -2223,6 +2234,7 @@ def micro_edit(post_id):
         print(f"Error in micro_edit: {e}")
         return render_template('micro_create.html', 
                                error=f'Fel vid redigering: {str(e)}'), 500
+
 
 
 @app.route('/micro/delete/<post_id>', methods=['POST'])
