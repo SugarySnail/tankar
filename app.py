@@ -594,8 +594,9 @@ def get_months_from_posts(posts):
             
             if key not in months_dict:
                 months_dict[key] = {
-                    "year": str(year),           # ← ÄNDRAT: konvertera till string för konsistens
-                    "month": f"{month:02d}",    # ← ÄNDRAT: formatera som "01", "02", osv
+                    "year": str(year),           
+                    "month": f"{month:02d}",
+                    "month_number": month,
                     "month_name": month_names_sv.get(month, ""),
                     "posts": []
                 }
@@ -1944,7 +1945,8 @@ def rebuild_outputs():
                                    months=months,
                                    site_title=SITE_TITLE,
                                    site_description=SITE_DESCRIPTION,
-                                   nav_html=create_nav(active_page='tags', depth=1))
+                                   nav_html=create_nav(active_page='tags', depth=1),
+                                   now=datetime.now())
 
     
     archive_dir = Path('output/tags')
@@ -2673,7 +2675,8 @@ def archive():
             months=months,
             nav_html=nav_html,
             site_title=SITE_TITLE,
-            site_description=SITE_DESCRIPTION
+            site_description=SITE_DESCRIPTION,
+            now=datetime.now()
         )
     except Exception as e:
         print(f"Error in archive route: {e}")
