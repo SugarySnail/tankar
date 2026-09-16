@@ -925,7 +925,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30, draft_count=0, 
         nav_section = f"""
     <nav class="menu">
         <a href="/create">Skapa inlägg</a>
-        <a href="/micro-create">Mikro</a>
+        <a href="/micro-create">Mikroinlägg</a>
         <a href="/micro/admin">Mikroadmin</a>
         {kommande_link}
         {utkast_link}
@@ -1002,7 +1002,7 @@ def make_upcoming_posts_html(posts, draft_count=0):
     <nav class="menu">
     <a href="/">Alla inlägg</a>
     <a href="/create">Skapa inlägg</a>
-    <a href="/micro-create">Mikro</a>
+    <a href="/micro-create">Mikroinlägg</a>
     <a href="/micro/admin">Mikroadmin</a>
     {utkast_link}
     <a href="/export">Exportera</a>
@@ -1154,7 +1154,7 @@ def make_draft_posts_html(posts, upcoming_count=0):
     <nav class="menu">
     <a href="/">Alla inlägg</a>
     <a href="/create">Skapa</a>
-    <a href="/micro-create">Mikro</a>
+    <a href="/micro-create">Mikroinlägg</a>
     <a href="/micro/admin">Mikroadmin</a>
     {kommande_link}
     <a href="/export">Exportera</a>
@@ -1991,13 +1991,14 @@ def rebuild_outputs():
                     comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a></p>'
                 
                 tags_html = ""
-                if post.get("tags"):
+                if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
                     tag_links = []
                     for tag in post["tags"]:
                         tag_slug = tag.replace(" ", "-").lower()
                         tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
                     tags_html = " ".join(tag_links)
                     tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
+
                 
                 reading_time_html = ""
                 if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
@@ -2320,6 +2321,7 @@ def micro_create():
     return render_template('micro_create.html')
 
 
+# alla micro-rutter innehåller massa skit för draft_count och upcoming_count som inte längre används, för att göra länkar till kommande och utkast som inte längre finns i templates. Men jag orkar inte rensa i koden och riskera en massa följdfel, så det får vara nu.
 @app.route('/micro-post', methods=['POST'])
 @admin_only
 def micro_post():
@@ -2819,13 +2821,14 @@ def paginated_index(page_num):
             
             # Tags
             tags_html = ""
-            if post.get("tags"):
+            if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
                 tag_links = []
                 for tag in post["tags"]:
                     tag_slug = tag.replace(" ", "-").lower()
                     tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
                 tags_html = " ".join(tag_links)
                 tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
+
             
             # Reading time
             reading_time_html = ""
