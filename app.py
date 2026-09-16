@@ -737,7 +737,7 @@ def balance_html_tags(html_content):
 
 
 
-def create_nav(active_page=None, depth=0):
+def create_nav(active_page=None, depth=0, draft_count=0, upcoming_count=0):
     """Creates navigation menu with dropdown for additional items."""
     prefix = "../" * depth
     
@@ -1551,7 +1551,7 @@ def save_microblog_post(content):
 
 
 
-def make_microblog_html(posts):
+def make_microblog_html(posts, draft_count=0, upcoming_count=0):
     """Generera microblogs-sidor med pagination"""
     from datetime import datetime
     
@@ -1585,7 +1585,7 @@ def make_microblog_html(posts):
         
         # Pagination
         pagination_html = make_pagination_html(page_num, total_pages) if total_pages > 1 else ''
-        nav_html = create_nav(active_page='micro', depth=1)
+        nav_html = create_nav(active_page='micro', depth=1, draft_count=draft_count, upcoming_count=upcoming_count)
         html_content = f'''<!DOCTYPE html>
 <html lang="sv">
 <head>
@@ -1628,6 +1628,7 @@ def make_microblog_html(posts):
         output_file.write_text(html_content, encoding='utf-8')
     
     print("✓ Mikroblogg regenererad med pagination")
+
 
 
 
@@ -2324,33 +2325,51 @@ def micro_create():
 def micro_post():
     """Spara microblogs-inlägg och regenerera sidor"""
     try:
+        all_posts = load_all_posts()
+        draft_count = sum(1 for p in all_posts if p.get("draft", False))
+        upcoming_count = sum(1 for p in all_posts if not p.get("draft", False) and not is_post_published(p))
+        
         content = request.form.get('content', '').strip()
         
         if not content:
             return render_template('micro_create.html', 
-                                   error='Inlägget kan inte vara tomt!'), 400
+                                   error='Inlägget kan inte vara tomt!',
+                                   site_title=SITE_TITLE,
+                                   draft_count=draft_count,
+                                   upcoming_count=upcoming_count), 400
         
         if len(content) > 5000:
             return render_template('micro_create.html', 
-                                   error='Inlägget är för långt (max 5000 tecken)'), 400
+                                   error='Inlägget är för långt (max 5000 tecken)',
+                                   site_title=SITE_TITLE,
+                                   draft_count=draft_count,
+                                   upcoming_count=upcoming_count), 400
         
         save_microblog_post(content)
         
-        posts = load_microblog_posts()
-        make_microblog_html(posts)
-        generate_all_microblog_pages(posts)
-        generate_rss_micro(posts)
+        micro_posts = load_microblog_posts()
+        make_microblog_html(micro_posts)
+        generate_all_microblog_pages(micro_posts)
+        generate_rss_micro(micro_posts)
         
-        # Hämta de 5 senaste inläggen för visning
-        recent_posts = posts[:3]  # Antag att posts är sorterad med nyast först
+        # Hämta de 3 senaste inläggen för visning
+        recent_posts = micro_posts[:10]
         
         return render_template('micro_published.html',
                                recent_posts=recent_posts,
-                               count=len(posts))
+                               count=len(micro_posts),
+                               site_title=SITE_TITLE,
+                               draft_count=draft_count,
+                               upcoming_count=upcoming_count)
     except Exception as e:
         print(f"Error in micro_post: {e}")
         return render_template('micro_create.html', 
-                               error=f'Fel vid sparning: {str(e)}'), 500
+                               error=f'Fel vid sparning: {str(e)}',
+                               site_title=SITE_TITLE,
+                               draft_count=draft_count,
+                               upcoming_count=upcoming_count), 500
+
+
 
 
 @app.route('/micro/edit/<post_id>', methods=["GET", "POST"])
@@ -2358,20 +2377,28 @@ def micro_post():
 def micro_edit(post_id):
     """Redigera ett befintligt mikroinlägg"""
     try:
-        posts = load_microblog_posts()
+        all_posts = load_all_posts()
+        draft_count = sum(1 for p in all_posts if p.get("draft", False))
+        upcoming_count = sum(1 for p in all_posts if not p.get("draft", False) and not is_post_published(p))
+        
+        micro_posts = load_microblog_posts()
         
         # Hitta inlägget
         post = None
         xml_file = None
-        for p in posts:
+        for p in micro_posts:
             if p.get('id') == post_id:
                 post = p
                 xml_file = Path(p.get('filepath', ''))
                 break
         
         if post is None:
-            return render_template('micro_create.html', 
-                                   error='Inlägget hittades inte!'), 404
+            return render_template('micro_edit.html', 
+                                   post={},  
+                                   error='Inlägget hittades inte!',
+                                   site_title=SITE_TITLE,
+                                   draft_count=draft_count,
+                                   upcoming_count=upcoming_count), 404
         
         if request.method == 'POST':
             new_content = request.form.get('content', '').strip()
@@ -2379,14 +2406,20 @@ def micro_edit(post_id):
             if not new_content:
                 return render_template('micro_edit.html',
                                        post=post,
-                                       error='Inlägget kan inte vara tomt!'), 400
+                                       site_title=SITE_TITLE,
+                                       error='Inlägget kan inte vara tomt!',
+                                       draft_count=draft_count,
+                                       upcoming_count=upcoming_count), 400
             
             if len(new_content) > 5000:
                 return render_template('micro_edit.html',
                                        post=post,
-                                       error='Inlägget är för långt (max 5000 tecken)'), 400
+                                       error='Inlägget är för långt (max 5000 tecken)',
+                                       site_title=SITE_TITLE,
+                                       draft_count=draft_count,
+                                       upcoming_count=upcoming_count), 400
             
-            # Ersätta ” med " och processa bilder
+            # Ersätta " med " och processa bilder
             new_content = new_content.replace('=”', '="')
             new_content = new_content.replace('”>', '">')
             new_content = process_images_in_content(new_content)
@@ -2407,23 +2440,36 @@ def micro_edit(post_id):
                 tree.write(str(xml_file), encoding='utf-8', xml_declaration=True)
             
             # Regenerera
-            posts = load_microblog_posts()
-            make_microblog_html(posts)
-            generate_all_microblog_pages(posts)
-            generate_rss_micro(posts)
+            micro_posts = load_microblog_posts()
+            make_microblog_html(micro_posts, draft_count=draft_count, upcoming_count=upcoming_count)
+            generate_all_microblog_pages(micro_posts)
+            generate_rss_micro(micro_posts)
             
-            recent_posts = posts[:5]
+            recent_posts = micro_posts[:10]
             return render_template('micro_published.html',
                                    recent_posts=recent_posts,
-                                   count=len(posts),
-                                   message='Inlägget har uppdaterats!')
+                                   count=len(micro_posts),
+                                   message='Inlägget har uppdaterats!',
+                                   site_title=SITE_TITLE,
+                                   draft_count=draft_count,
+                                   upcoming_count=upcoming_count)
         
-        return render_template('micro_edit.html', post=post)
+        return render_template('micro_edit.html', 
+                               post=post,
+                               site_title=SITE_TITLE,
+                               draft_count=draft_count,
+                               upcoming_count=upcoming_count)
     
     except Exception as e:
         print(f"Error in micro_edit: {e}")
-        return render_template('micro_create.html', 
-                               error=f'Fel vid redigering: {str(e)}'), 500
+        return render_template('micro_edit.html', 
+                               post={}, 
+                               error=f'Fel vid redigering: {str(e)}',
+                               site_title=SITE_TITLE,
+                               draft_count=draft_count,
+                               upcoming_count=upcoming_count), 500
+
+
 
 
 
@@ -2432,11 +2478,15 @@ def micro_edit(post_id):
 def micro_delete(post_id):
     """Ta bort ett mikroinlägg"""
     try:
-        posts = load_microblog_posts()
+        all_posts = load_all_posts()
+        draft_count = sum(1 for p in all_posts if p.get("draft", False))
+        upcoming_count = sum(1 for p in all_posts if not p.get("draft", False) and not is_post_published(p))
+        
+        micro_posts = load_microblog_posts()
         
         # Hitta och ta bort XML-filen
         xml_file = None
-        for p in posts:
+        for p in micro_posts:
             if p.get('id') == post_id:
                 xml_file = Path(p.get('filepath', ''))
                 break
@@ -2445,21 +2495,29 @@ def micro_delete(post_id):
             xml_file.unlink()
         
         # Regenerera
-        posts = load_microblog_posts()
-        make_microblog_html(posts)
-        generate_all_microblog_pages(posts)
-        generate_rss_micro(posts)
+        micro_posts = load_microblog_posts()
+        make_microblog_html(micro_posts, draft_count=draft_count, upcoming_count=upcoming_count)
+        generate_all_microblog_pages(micro_posts)
+        generate_rss_micro(micro_posts)
         
-        recent_posts = posts[:5]
+        recent_posts = micro_posts[:10]
         return render_template('micro_published.html',
                                recent_posts=recent_posts,
-                               count=len(posts),
-                               message='Inlägget har tagits bort!')
+                               count=len(micro_posts),
+                               message='Inlägget har tagits bort!',
+                               site_title=SITE_TITLE,
+                               draft_count=draft_count,
+                               upcoming_count=upcoming_count)
     
     except Exception as e:
         print(f"Error in micro_delete: {e}")
         return render_template('micro_create.html', 
-                               error=f'Fel vid borttagning: {str(e)}'), 500
+                               error=f'Fel vid borttagning: {str(e)}',
+                               site_title=SITE_TITLE,
+                               draft_count=draft_count,
+                               upcoming_count=upcoming_count), 500
+
+
 
 
 
@@ -2468,11 +2526,28 @@ def micro_admin():
     """Admin-sida för att se och hantera alla mikroinlägg"""
     try:
         posts = load_microblog_posts()
-        return render_template('micro_admin.html', posts=posts, count=len(posts))
+        
+        # Räkna drafts och upcoming för menyn
+        all_posts = load_all_posts()
+        draft_count = sum(1 for p in all_posts if p.get("draft", False))
+        upcoming_count = sum(1 for p in all_posts if not is_post_published(p) and not p.get("draft", False))
+        
+        return render_template('micro_admin.html', 
+                               posts=posts, 
+                               count=len(posts),
+                               site_title=SITE_TITLE,
+                               draft_count=draft_count,
+                               upcoming_count=upcoming_count)
     except Exception as e:
         print(f"Error in micro_admin: {e}")
-        return render_template('micro_create.html', 
-                               error=f'Fel vid hämtning av inlägg: {str(e)}'), 500
+        return render_template('micro_admin.html', 
+                               error=f'Fel vid hämtning av inlägg: {str(e)}',
+                               posts=[],
+                               count=0,
+                               site_title=SITE_TITLE,
+                               draft_count=0,
+                               upcoming_count=0), 500
+
 
 @app.route("/create", methods=["GET", "POST"])
 @admin_only
