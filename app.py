@@ -238,7 +238,7 @@ def make_pagination_html(current_page, total_pages, base_url=""):
 
 
 
-def load_posts(exclude_old_poetry=True):
+def load_posts(exclude_old_poetry=True, include_drafts=False):
     """Ladda blogginlägg, med valfri gallring av gamla poesi-inlägg"""
     posts = []
     poetry_posts = []
@@ -266,14 +266,23 @@ def load_posts(exclude_old_poetry=True):
     posts = poetry_posts + other_posts
     posts.sort(key=lambda x: x["date"], reverse=True)
     
-    # Filtrera bort kommande inlägg för publik publicering
-    published_posts = [p for p in posts if is_post_published(p)]
+    # Filtrera bort framtida inlägg, och utkastinlägg om de inte ska inkluderas
+    if include_drafts:
+        published_posts = [p for p in posts if is_post_published(p)]
+    else:
+        published_posts = [p for p in posts if is_post_published(p) and not p.get("draft", False)]
     
     return published_posts
+
 
 def get_upcoming_posts(posts):
     """Filtrerar och returnerar endast framtida inlägg"""
     return [p for p in posts if not is_post_published(p)]
+
+
+def get_draft_posts(posts):
+    """Filtrerar och returnerar endast utkastinlägg"""
+    return [p for p in posts if p.get("draft", False)]
 
 
 def load_all_posts(exclude_old_poetry=True):
@@ -455,8 +464,12 @@ def generate_rss_feeds(posts):
     """Genererar rss.xml (max 30 senaste inlägg) och rss-ETIKETT.xml för varje etikett (max 30 per etikett)"""
     MAX_RSS_ITEMS = 30
     
-    # ← NYTT: Filtrera bort framtida inlägg
+    # Filtrera bort framtida inlägg
     posts = [p for p in posts if is_post_published(p)]
+
+    # Filtrera bort utkast från RSS
+    posts = [p for p in posts if not p.get("draft", False)]
+
     
     # Filtrera bort mikrobloggposter - behåll bara reguljära blogginlägg
     posts = [p for p in posts if not p.get('xml_filename', '').startswith('posts/micro/')]
@@ -498,7 +511,8 @@ def parse_post(xml_file):
         title = root.findtext("title", "")
         date = root.findtext("date", "")
         summary = root.findtext("summary", "")
-        nobr = root.findtext("nobr", "false") == "true"  # ← NYTT
+        nobr = root.findtext("nobr", "false") == "true"
+        draft = root.findtext("draft", "false") == "true"
         date_part = date.split("T")[0] if date else "0000-00-00"
         
         # Konvertera till relativ sökväg från POSTS_DIR
@@ -518,7 +532,8 @@ def parse_post(xml_file):
             "filename": f"{date_part}-{slugify_filename(title)}.html",
             "xml_filename": str(relative_path),
             "reading_time": reading_time,
-            "nobr": nobr,  # ← NYTT
+            "nobr": nobr,
+            "draft": draft,
         }
     except Exception as e:
         print(f"Error parsing {xml_file}: {e}")
@@ -615,7 +630,7 @@ def get_months_from_posts(posts):
 
 
 
-def save_post(title, date, content, tags, summary="", xml_filename=None, nobr=False):
+def save_post(title, date, content, tags, summary="", xml_filename=None, nobr=False, draft=False):
     if not xml_filename:
         date_part = date.split("T")[0]
         slug = slugify(title)
@@ -657,6 +672,7 @@ def save_post(title, date, content, tags, summary="", xml_filename=None, nobr=Fa
     ET.SubElement(root, "summary").text = summary
     ET.SubElement(root, "content").text = content
     ET.SubElement(root, "nobr").text = "true" if nobr else "false"
+    ET.SubElement(root, "draft").text = "true" if draft else "false" 
     tags_elem = ET.SubElement(root, "tags")
     for tag in tags_list:  
         ET.SubElement(tags_elem, "tag").text = tag
@@ -769,7 +785,11 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
     
     # Filtrera bort framtida inlägg
     posts = [post for post in posts if is_post_published(post)]
-    
+
+    # Filtrera bort utkast från admin-indexsidan
+    if include_admin_nav:
+        posts = [post for post in posts if not post.get("draft", False)]
+
     # Dela upp inlägg i sidor
     pages = paginate_posts(posts, per_page)
     if not pages:
@@ -898,6 +918,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
         <a href="/micro-create">Mikroinlägg</a>
         <a href="/micro/admin">Mikroadmin</a>
         <a href="/admin-upcoming">Kommande</a>
+        <a href="/admin-drafts">Utkast</a>
         <a href="/export">Exportera</a>
     </nav>"""
     else:
@@ -965,6 +986,7 @@ def make_upcoming_posts_html(posts):
     <a href="/create">Skapa inlägg</a>
     <a href="/micro-create">Mikroinlägg</a>
     <a href="/micro/admin">Mikroadmin</a>
+    <a href="/admin-drafts">Utkast</a>
     <a href="/export">Exportera</a>
     </nav>"""
     
@@ -1100,6 +1122,131 @@ link.classList.toggle('open');
 </html>"""
 
 
+
+def make_draft_posts_html(posts):
+    """Generera admin-sida för utkastinlägg"""
+    nav_html = """
+    <nav class="menu">
+    <a href="/">Alla inlägg</a>
+    <a href="/create">Skapa</a>
+    <a href="/micro-create">Mikroinlägg</a>
+    <a href="/micro/admin">Mikroadmin</a>
+    <a href="/admin-upcoming">Kommande</a>
+    <a href="/export">Exportera</a>
+    </nav>"""
+    
+    if not posts:
+        cards = '<div class="card"><p>Inga utkastinlägg.</p></div>'
+    else:
+        cards = ""
+        for post in posts:
+            safe_title = html.escape(post["title"])
+            try:
+                dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+                formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+            except:
+                formatted_date = post["date"]
+            safe_date = html.escape(formatted_date)
+            
+            # Extrahera excerpt
+            excerpt = get_excerpt(post["content"], tags=post.get("tags"), nobr=post.get("nobr", False))
+            excerpt = balance_html_tags(excerpt)
+            full_content = post["content"]
+            summary = post.get("summary", "").strip()
+            
+            # Bestäm om vi ska visa "Läs mer"-länk
+            show_read_more = not post.get("nobr", False) and excerpt != full_content
+            
+            # Tags-html
+            tags_html = ""
+            if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
+                tag_links = []
+                for tag in post["tags"]:
+                    tag_slug = tag.replace(" ", "-").lower()
+                    tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+                tags_html = " ".join(tag_links)
+            
+            # Admin-knappar
+            xml_filename = post.get("xml_filename", "")
+            xml_filename_encoded = quote(xml_filename, safe='/')
+            
+            edit_button = f'<a href="/edit/{xml_filename_encoded}" class="edit-btn" style="color:#ff9800;">✎ Redigera</a>'
+            delete_button = f'<button onclick="deletePost(\'{xml_filename_encoded}\')" class="delete-btn" style="color:#ff3333; border:none; background:none; cursor:pointer; font-size:1.2em;">✕</button>'
+            
+            read_more_html = ""
+            if show_read_more:
+                read_more_html = f'<p><a href="/drafts/{post["filename"]}" class="read-more-btn">Läs mer →</a></p>'
+            
+            summary_html = ""
+            if show_read_more and summary:
+                summary_html = f'''<div class="ai-summary-wrapper">
+                <a class="toggle-summary" onclick="toggleSummary(this)">Visa AI-sammanfattning</a>
+                <div class="ai-summary-box">
+                <p>{html.escape(summary)}</p>
+                </div>
+                </div>'''
+            
+            cards += f"""
+            <div class="card">
+            <div class="admin-buttons">
+            {edit_button}
+            {delete_button}
+            </div>
+            <h2>{safe_title}</h2>
+            <div class="date-tags-wrapper">
+            <span class="date">{safe_date}</span>
+            </div>
+            <div>{excerpt}</div>
+            {read_more_html}
+            {summary_html}
+            <div class="comment-tags-wrapper">
+            <div class="tags">{tags_html}</div>
+            </div>
+            </div>"""
+    
+    return f"""<!doctype html>
+    <html lang="sv">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <title>Utkast - {SITE_TITLE}</title>
+    </head>
+    <body>
+    <header class="header">
+    <div class="header-content">
+    <h1>Utkast</h1>
+    </div>
+    </header>
+    {nav_html}
+    <div class="grid">
+    {cards}
+    </div>
+    <script>
+    function deletePost(xmlFilename) {{
+        if (confirm('Är du säker på att du vill ta bort detta utkast? Detta kan inte ångras.')) {{
+            fetch('/delete/' + xmlFilename, {{method: 'POST'}})
+            .then(r => r.json())
+            .then(data => {{
+                if (data.success) {{
+                    alert('Utkastet är raderat');
+                    location.reload();
+                }} else {{
+                    alert('Fel: ' + data.error);
+                }}
+            }})
+            .catch(e => alert('Fel vid borttagning: ' + e));
+        }}
+    }}
+    function toggleSummary(link) {{
+        const box = link.nextElementSibling;
+        box.classList.toggle('show');
+        link.classList.toggle('open');
+    }}
+    </script>
+    </body>
+    </html>"""
 
 
 def make_post_html(post, include_admin_nav=False):
@@ -2072,6 +2219,14 @@ def admin_upcoming():
     html_content = make_upcoming_posts_html(upcoming_posts)
     return html_content
 
+@app.route('/admin-drafts')
+def admin_drafts():
+    """Visa alla utkastinlägg"""
+    all_posts = load_all_posts()
+    draft_posts = get_draft_posts(all_posts)
+    html = make_draft_posts_html(draft_posts)
+    return html
+
 @app.route('/delete/<path:xml_path>', methods=['POST'])
 @admin_only
 def delete_post(xml_path):
@@ -2298,6 +2453,7 @@ def create():
             tags = request.form.get("tags", "").strip()
             summary = request.form.get("summary", "").strip()
             nobr = 'nobr' in request.form 
+            draft = 'draft' in request.form
             
             if not all([title, date, content]):
                 return render_template("create.html", 
@@ -2311,7 +2467,7 @@ def create():
                                        error="Ogiltigt datumformat",
                                        default_date=datetime.now().strftime("%Y-%m-%dT%H:%M")), 400
             
-            save_post(title, date, content, tags, summary, nobr=nobr)
+            save_post(title, date, content, tags, summary, nobr=nobr, draft=draft)
             rebuild_outputs()
             
             return redirect("/")
@@ -2344,6 +2500,7 @@ def edit(xml_path):
             tags = request.form.get("tags", "").strip()
             summary = request.form.get("summary", "").strip()
             nobr = 'nobr' in request.form
+            draft = 'draft' in request.form
             
             if not all([title, date, content]):
                 if xml_file.exists():
@@ -2375,8 +2532,9 @@ def edit(xml_path):
             new_xml_path = f"{year_month}/{new_filename}"
             new_xml_file = POSTS_DIR / new_xml_path
             
-            # Spara inlägget (med eventuellt nytt filnamn) ← FIXA DENNA RAD
-            save_post(title, date, content, tags, summary, xml_filename=str(new_xml_file), nobr=nobr)
+            # Spara inlägget (med eventuellt nytt filnamn)
+            save_post(title, date, content, tags, summary, xml_filename=str(new_xml_file), nobr=nobr, draft=draft)
+
             
             # Om filnamnet ändrades, ta bort gamla filen och gamla HTML-filer
             if str(xml_file) != str(new_xml_file):
