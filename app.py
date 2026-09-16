@@ -779,7 +779,7 @@ def create_nav(active_page=None, depth=0):
 
 
 
-def make_index_html(posts, include_admin_nav=False, per_page=30):
+def make_index_html(posts, include_admin_nav=False, per_page=30, draft_count=0, upcoming_count=0):
     """Generera indexsida med pagination"""
     nav_html = create_nav(active_page='home', depth=0)
     
@@ -910,15 +910,25 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
     # Pagination
     pagination = make_pagination_html(1, len(pages)) if len(pages) > 1 else ""
     
+    # Utkast-länk visas bara om det finns drafts
+    utkast_link = ""
+    if include_admin_nav and draft_count > 0:
+        utkast_link = f'<a href="/admin-drafts">Utkast ({draft_count})</a>'
+
+    # Kommande-länk visas bara om det finns kommande inlägg
+    kommande_link = ""
+    if include_admin_nav and upcoming_count > 0:
+        kommande_link = f'<a href="/admin-upcoming">Kommande ({upcoming_count})</a>'
+    
     nav_section = ""
     if include_admin_nav:
-        nav_section = """
+        nav_section = f"""
     <nav class="menu">
         <a href="/create">Skapa inlägg</a>
-        <a href="/micro-create">Mikroinlägg</a>
+        <a href="/micro-create">Mikro</a>
         <a href="/micro/admin">Mikroadmin</a>
-        <a href="/admin-upcoming">Kommande</a>
-        <a href="/admin-drafts">Utkast</a>
+        {kommande_link}
+        {utkast_link}
         <a href="/export">Exportera</a>
     </nav>"""
     else:
@@ -978,15 +988,23 @@ def make_index_html(posts, include_admin_nav=False, per_page=30):
 
 
 
-def make_upcoming_posts_html(posts):
+
+def make_upcoming_posts_html(posts, draft_count=0):
     """Generera admin-sida för kommande inlägg"""
-    nav_html = """
+    # Utkast-länk med dynamisk räknare
+    utkast_link = ""
+    if draft_count > 0:
+        utkast_link = f'<a href="/admin-drafts">Utkast ({draft_count})</a>'
+    else:
+        utkast_link = ""
+
+    nav_html = f"""
     <nav class="menu">
     <a href="/">Alla inlägg</a>
     <a href="/create">Skapa inlägg</a>
-    <a href="/micro-create">Mikroinlägg</a>
+    <a href="/micro-create">Mikro</a>
     <a href="/micro/admin">Mikroadmin</a>
-    <a href="/admin-drafts">Utkast</a>
+    {utkast_link}
     <a href="/export">Exportera</a>
     </nav>"""
     
@@ -1123,15 +1141,22 @@ link.classList.toggle('open');
 
 
 
-def make_draft_posts_html(posts):
+def make_draft_posts_html(posts, upcoming_count=0):
     """Generera admin-sida för utkastinlägg"""
-    nav_html = """
+    # Kommande-länk visas bara om det finns kommande inlägg
+    kommande_link = ""
+    if upcoming_count > 0:
+        kommande_link = f'<a href="/admin-upcoming">Kommande ({upcoming_count})</a>'
+    else:
+        kommande_link = '<a href="/admin-upcoming">Kommande</a>'
+    
+    nav_html = f"""
     <nav class="menu">
     <a href="/">Alla inlägg</a>
     <a href="/create">Skapa</a>
-    <a href="/micro-create">Mikroinlägg</a>
+    <a href="/micro-create">Mikro</a>
     <a href="/micro/admin">Mikroadmin</a>
-    <a href="/admin-upcoming">Kommande</a>
+    {kommande_link}
     <a href="/export">Exportera</a>
     </nav>"""
     
@@ -1247,6 +1272,7 @@ def make_draft_posts_html(posts):
     </script>
     </body>
     </html>"""
+
 
 
 def make_post_html(post, include_admin_nav=False):
@@ -2203,11 +2229,14 @@ def index():
     try:
         posts = load_all_posts()
         generate_rss_feeds(posts)
-        index_html, _ = make_index_html(posts, include_admin_nav=True, per_page=30)
+        draft_count = sum(1 for p in posts if p.get("draft", False))
+        upcoming_count = sum(1 for p in posts if not is_post_published(p))
+        index_html, _ = make_index_html(posts, include_admin_nav=True, per_page=30, draft_count=draft_count, upcoming_count=upcoming_count)
         return index_html
     except Exception as e:
         print(f"Error in index route: {e}")
         return f"Error: {str(e)}", 500
+
 
 @app.route("/admin-upcoming")
 def admin_upcoming():
@@ -2216,16 +2245,20 @@ def admin_upcoming():
     upcoming_posts = get_upcoming_posts(all_posts)
     upcoming_posts.sort(key=lambda x: x["date"], reverse=True)  # Sortera nyast först
     
-    html_content = make_upcoming_posts_html(upcoming_posts)
+    draft_count = sum(1 for p in all_posts if p.get("draft", False))
+    html_content = make_upcoming_posts_html(upcoming_posts, draft_count=draft_count)
     return html_content
 
-@app.route('/admin-drafts')
+
+@app.route("/admin-drafts")
+@admin_only
 def admin_drafts():
     """Visa alla utkastinlägg"""
-    all_posts = load_all_posts()
-    draft_posts = get_draft_posts(all_posts)
-    html = make_draft_posts_html(draft_posts)
-    return html
+    posts = load_all_posts()
+    draft_posts = [p for p in posts if p.get("draft", False)]
+    upcoming_count = sum(1 for p in posts if not is_post_published(p) and not p.get("draft", False))
+    return make_draft_posts_html(draft_posts, upcoming_count=upcoming_count)
+
 
 @app.route('/delete/<path:xml_path>', methods=['POST'])
 @admin_only
