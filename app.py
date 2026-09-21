@@ -236,6 +236,28 @@ def make_pagination_html(current_page, total_pages, base_url=""):
     html_out += '</nav>\n'
     return html_out
 
+def make_pagination_html_for_tag(current_page, total_pages, tag_slug):
+    """Skapar HTML för sidnavigation för tag-sidor"""
+    html_out = '<nav class="pagination">\n'
+    
+    # Föregående-knapp
+    if current_page > 1:
+        if current_page == 2:
+            prev_url = f"/tags/{tag_slug}/"
+        else:
+            prev_url = f"/tags/{tag_slug}/page-{current_page - 1}"
+        html_out += f' <a href="{prev_url}" class="prev">← Föregående</a>\n'
+    
+    # Sidnummer
+    html_out += f' <span class="page-info">Sida {current_page} av {total_pages}</span>\n'
+    
+    # Nästa-knapp
+    if current_page < total_pages:
+        next_url = f"/tags/{tag_slug}/page-{current_page + 1}"
+        html_out += f' <a href="{next_url}" class="next">Nästa →</a>\n'
+    
+    html_out += '</nav>\n'
+    return html_out
 
 
 def load_posts(exclude_old_poetry=True, include_drafts=False):
@@ -489,7 +511,8 @@ def generate_rss_feeds(posts):
     for tag in all_tags:
         filtered_posts = [p for p in processed_posts if tag in p.get("tags", [])]
         limited_posts = filtered_posts[:MAX_RSS_ITEMS]
-        create_rss_file(limited_posts, f"rss-{tag}.xml", tag)
+        tag_slug = slugify(tag)
+        create_rss_file(limited_posts, f"rss-{tag_slug}.xml", tag)
     
     # Generera huvudsaklig RSS (max 30 senaste inlägg)
     limited_main_posts = processed_posts[:MAX_RSS_ITEMS]
@@ -2142,31 +2165,38 @@ def rebuild_outputs():
                 dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
                 post['year'] = dt.strftime("%Y")
                 post['month'] = dt.strftime("%m")
-                post['excerpt'] = extract_excerpt(html.unescape(post.get('content', '')), words=50)
+                post['excerpt'] = get_excerpt(post.get('content', ''), tags=post.get("tags", []))
+                post['excerpt'] = balance_html_tags(post['excerpt']) 
+                post['summary'] = post.get("summary", "").strip()
                 # Extrahera bara titeldelen från filnamnet
                 post['title_slug'] = post['filename'].replace('.html', '')
+                full_content = post.get('content', '')
+                post['show_read_more'] = not post.get("nobr", False) and post['excerpt'] != full_content
             except Exception as e:
                 print(f"  Varning: Kunde inte skapa excerpt för {post['filename']}: {e}")
                 post['year'] = "0000"
                 post['month'] = "00"
                 post['excerpt'] = ""
                 post['title_slug'] = ""
+                post['show_read_more'] = False
 
+        # PAGINATION: Dela upp inlägg i sidor
+        tag_pages = paginate_posts(filtered_posts, per_page=30)
         
+        print(f"  Tag: {tag}, Slug: {tag_slug}, Inlägg: {len(filtered_posts)}, Sidor: {len(tag_pages)}")
         
-        print(f"  Tag: {tag}, Slug: {tag_slug}, Inlägg: {len(filtered_posts)}")
-        
-        if filtered_posts:
-            print(f"  Första post skrivs ")
-        
+        # GENERERA FÖRSTA SIDAN (index.html)
         try:
             tag_html = render_template("tag_archive.html", 
-                           posts=filtered_posts, 
-                           tag=tag, 
-                           months=months,
-                           nav_html=create_nav(active_page='tags', depth=2),
-                           site_title=SITE_TITLE,
-                           site_description=SITE_DESCRIPTION)
+                               posts=tag_pages[0],
+                               tag=tag,
+                               current_page=1,
+                               total_pages=len(tag_pages),
+                               pagination_html=make_pagination_html_for_tag(1, len(tag_pages), tag_slug),
+                               months=months,
+                               nav_html=create_nav(active_page='tags', depth=2),
+                               site_title=SITE_TITLE,
+                               site_description=SITE_DESCRIPTION)
             print(f"  render_template lyckades för {tag}")
         except Exception as e:
             print(f"  ERROR i render_template: {str(e)}")
@@ -2176,9 +2206,36 @@ def rebuild_outputs():
             tag_dir = Path('output/tags') / tag_slug
             tag_dir.mkdir(parents=True, exist_ok=True)
             (tag_dir / 'index.html').write_text(tag_html, encoding='utf-8')
-            print(f"  ✓ Tag-sida '{tag}' sparad")
+            print(f"  ✓ Tag-sida '{tag}' (sida 1/{len(tag_pages)}) sparad")
         except Exception as e:
             print(f"  ERROR vid sparande: {str(e)}")
+
+        # GENERERA ÖVRIGA SIDOR (page-2.html, page-3.html, osv)
+        if len(tag_pages) > 1:
+            for page_num in range(2, len(tag_pages) + 1):
+                try:
+                    tag_html = render_template("tag_archive.html",
+                                       posts=tag_pages[page_num - 1],
+                                       tag=tag,
+                                       current_page=page_num,
+                                       total_pages=len(tag_pages),
+                                       pagination_html=make_pagination_html_for_tag(page_num, len(tag_pages), tag_slug),
+                                       months=months,
+                                       nav_html=create_nav(active_page='tags', depth=2),
+                                       site_title=SITE_TITLE,
+                                       site_description=SITE_DESCRIPTION)
+                except Exception as e:
+                    print(f"  ERROR i render_template för sida {page_num}: {str(e)}")
+                    continue
+                
+                try:
+                    output_file = tag_dir / f'page-{page_num}.html'
+                    output_file.write_text(tag_html, encoding='utf-8')
+                    print(f"  ✓ Tag-sida '{tag}' (sida {page_num}/{len(tag_pages)}) sparad")
+                except Exception as e:
+                    print(f"  ERROR vid sparande av sida {page_num}: {str(e)}")
+
+        print(f"✓ Alla sidor för tag '{tag}' klara ({len(tag_pages)} sidor total)")
 
     print("✓ Tag-sidor klara")
 
@@ -2202,6 +2259,7 @@ def rebuild_outputs():
     rss_output_dir = Path('output/pages')
     rss_output_dir.mkdir(parents=True, exist_ok=True)
     (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
+
 
 
 
