@@ -418,16 +418,6 @@ def make_rss_page_html(posts):
     return html
 
 
-
-def escape_xml(text):
-    """Escapar XML-specialtecken"""
-    return (text
-        .replace('&', '&amp;')
-        .replace('<', '&lt;')
-        .replace('>', '&gt;')
-        .replace('"', '&quot;')
-        .replace("'", '&apos;'))
-
 def create_rss_file(posts, filename, tag=None):
     """Skapar en RSS-fil för de givna inläggen"""
     rss = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -562,9 +552,6 @@ def parse_post(xml_file):
         print(f"Error parsing {xml_file}: {e}")
         return None
 
-
-
-from datetime import datetime
 
 def is_post_published(post):
     """
@@ -1466,7 +1453,6 @@ def generate_404_pages():
 
 def generate_rss_micro(posts):
     """Generera RSS-feed för mikrobloggen (max 30 senaste inlägg)"""
-    from datetime import datetime
     
     # Begränsa till 30 senaste inlägg
     MAX_RSS_ITEMS = 30
@@ -1575,9 +1561,7 @@ def save_microblog_post(content):
 
 
 def make_microblog_html(posts, draft_count=0, upcoming_count=0):
-    """Generera microblogs-sidor med pagination"""
-    from datetime import datetime
-    
+    """Generera microblogs-sidor med pagination"""    
     MICRO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     # Dela upp i sidor
