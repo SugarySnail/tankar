@@ -1947,6 +1947,32 @@ def extract_excerpt(post_content, words=50):
     excerpt = ''.join(parser.output).strip() + '...'
     return excerpt
 
+def prepare_posts_for_tag_archive(posts):
+    """Preparera inlägg för tag-arkiv med year, month, excerpt och show_read_more"""
+    for post in posts:
+        try:
+            dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+            post['year'] = dt.strftime("%Y")
+            post['month'] = dt.strftime("%m")
+            post['excerpt'] = get_excerpt(
+                post.get('content', ''), 
+                tags=post.get("tags", []),
+                nobr=post.get("nobr", False)
+            )
+            post['excerpt'] = balance_html_tags(post['excerpt']) 
+            post['summary'] = post.get("summary", "").strip()
+            post['title_slug'] = post['filename'].replace('.html', '')
+            full_content = post.get('content', '')
+            post['show_read_more'] = not post.get("nobr", False) and post['excerpt'] != full_content
+        except Exception as e:
+            print(f"  Varning: Kunde inte skapa excerpt för {post['filename']}: {e}")
+            post['year'] = "0000"
+            post['month'] = "00"
+            post['excerpt'] = ""
+            post['title_slug'] = ""
+            post['show_read_more'] = False
+    return posts
+
 
 
 def rebuild_outputs():
@@ -2159,36 +2185,16 @@ def rebuild_outputs():
         tag_slug = slugify(tag)
         filtered_posts = [p for p in posts if tag in p.get("tags", []) and "poesi" not in p.get("tags", [])]
 
-        # Extrahera år/månad och excerpts för varje inlägg
-        for post in filtered_posts:
-            try:
-                dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
-                post['year'] = dt.strftime("%Y")
-                post['month'] = dt.strftime("%m")
-                post['excerpt'] = get_excerpt(post.get('content', ''), tags=post.get("tags", []))
-                post['excerpt'] = balance_html_tags(post['excerpt']) 
-                post['summary'] = post.get("summary", "").strip()
-                # Extrahera bara titeldelen från filnamnet
-                post['title_slug'] = post['filename'].replace('.html', '')
-                full_content = post.get('content', '')
-                post['show_read_more'] = not post.get("nobr", False) and post['excerpt'] != full_content
-            except Exception as e:
-                print(f"  Varning: Kunde inte skapa excerpt för {post['filename']}: {e}")
-                post['year'] = "0000"
-                post['month'] = "00"
-                post['excerpt'] = ""
-                post['title_slug'] = ""
-                post['show_read_more'] = False
-
         # PAGINATION: Dela upp inlägg i sidor
         tag_pages = paginate_posts(filtered_posts, per_page=30)
         
         print(f"  Tag: {tag}, Slug: {tag_slug}, Inlägg: {len(filtered_posts)}, Sidor: {len(tag_pages)}")
         
         # GENERERA FÖRSTA SIDAN (index.html)
+        posts_for_page = prepare_posts_for_tag_archive(tag_pages[0])
         try:
             tag_html = render_template("tag_archive.html", 
-                               posts=tag_pages[0],
+                               posts=posts_for_page,
                                tag=tag,
                                current_page=1,
                                total_pages=len(tag_pages),
@@ -2213,9 +2219,10 @@ def rebuild_outputs():
         # GENERERA ÖVRIGA SIDOR (page-2.html, page-3.html, osv)
         if len(tag_pages) > 1:
             for page_num in range(2, len(tag_pages) + 1):
+                posts_for_page = prepare_posts_for_tag_archive(tag_pages[page_num - 1])
                 try:
                     tag_html = render_template("tag_archive.html",
-                                       posts=tag_pages[page_num - 1],
+                                       posts=posts_for_page,
                                        tag=tag,
                                        current_page=page_num,
                                        total_pages=len(tag_pages),
@@ -2259,6 +2266,7 @@ def rebuild_outputs():
     rss_output_dir = Path('output/pages')
     rss_output_dir.mkdir(parents=True, exist_ok=True)
     (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
+
 
 
 
