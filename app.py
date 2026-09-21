@@ -3,12 +3,15 @@ from pathlib import Path
 from urllib.parse import quote
 from urllib.parse import unquote
 from datetime import datetime
+from collections import Counter
+from functools import wraps
+from html.parser import HTMLParser
 import html
 import re
 import xml.etree.ElementTree as ET
 import os
-from collections import Counter
-from functools import wraps
+import unicodedata
+
 
 app = Flask(__name__, static_folder='output', static_url_path='')
 
@@ -52,7 +55,6 @@ def slugify(text):
 
 def slugify_filename(text):
     """Konverterar text till ett säkert HTML-filnamn (utan å, ä, ö)"""
-    import unicodedata
     
     # Normalisera och ta bort accenter/diakritiska tecken
     text = unicodedata.normalize('NFKD', text)
@@ -716,7 +718,6 @@ def balance_html_tags(html_content):
     """
     Stänger alla öppna HTML-taggar för att undvika bruten struktur.
     """
-    import re
     
     # Hitta alla öppna och stängda taggar
     open_tags = []
@@ -1381,7 +1382,6 @@ def generate_404_pages():
     Genererar 404.html (index.html) i alla nödvändiga output-kataloger.
     Skapar endast mappar för år och månader som faktiskt finns i /posts XML-filerna.
     """
-    from pathlib import Path
     
     posts_dir = BASE_DIR / 'posts'
     micro_dir = BASE_DIR / 'posts' / 'micro'
@@ -1863,8 +1863,6 @@ def make_faq_html():
 
 def extract_excerpt(post_content, words=50):
     """Extraherar första N ord från post-innehål med proper HTML-hantering"""
-    from html.parser import HTMLParser
-    import html
     
     class ExcerptParser(HTMLParser):
         def __init__(self, max_words):
