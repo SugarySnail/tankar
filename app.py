@@ -215,16 +215,16 @@ def paginate_posts(posts, per_page=30):
     return pages
 
 
-def make_pagination_html(current_page, total_pages, base_url=""):
+def make_pagination_html(current_page, total_pages, base_path=""):
     """Skapar HTML för sidnavigation (Föregående | Nästa)"""
     html_out = '<nav class="pagination">\n'
     
     # Föregående-knapp
     if current_page > 1:
         if current_page == 2:
-            prev_url = "/"
+            prev_url = f"{base_path}/index.html" if base_path else "/"
         else:
-            prev_url = f"/page-{current_page - 1}"
+            prev_url = f"{base_path}/page-{current_page - 1}"
         html_out += f' <a href="{prev_url}" class="prev">← Föregående</a>\n'
     
     # Sidnummer
@@ -232,11 +232,13 @@ def make_pagination_html(current_page, total_pages, base_url=""):
     
     # Nästa-knapp
     if current_page < total_pages:
-        next_url = f"/page-{current_page + 1}"
+        next_url = f"{base_path}/page-{current_page + 1}"
         html_out += f' <a href="{next_url}" class="next">Nästa →</a>\n'
     
     html_out += '</nav>\n'
     return html_out
+
+
 
 def make_pagination_html_for_tag(current_page, total_pages, tag_slug):
     """Skapar HTML för sidnavigation för tag-sidor"""
@@ -797,6 +799,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30, draft_count=0, 
     # Filtrera bort framtida inlägg
     posts = [post for post in posts if is_post_published(post)]
 
+
     # Filtrera bort utkast från admin-indexsidan
     if include_admin_nav:
         posts = [post for post in posts if not post.get("draft", False)]
@@ -874,7 +877,9 @@ def make_index_html(posts, include_admin_nav=False, per_page=30, draft_count=0, 
             link = f"posts/{year}/{month}/{post['filename']}"
         
         # Kommentera-länk
-        comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a>' if not show_read_more else ''
+        page_id = post['filename'].replace('.html', '').replace('-', '_')
+        comment_link = f'<a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count> →</a>' if not show_read_more else ''
+
 
         # Generera reading_time_html 
         reading_time_html = ""
@@ -887,6 +892,11 @@ def make_index_html(posts, include_admin_nav=False, per_page=30, draft_count=0, 
         read_more_html = ""
         if show_read_more:
             read_more_html = f'<p><a href="{link}" class="read-more-btn">Läs mer →</a></p>'
+
+        # Kommentarräknare mellan "Läs mer" och AI-sammanfattning (när både visas)
+        comment_count_between = ""
+        if show_read_more:
+            comment_count_between = f'<div style="margin: 10px 0;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count></a></div>'
         
         # AI-sammanfattning (visas bara om det finns en summary och excerpt < full content)
         summary_html = ""
@@ -910,6 +920,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30, draft_count=0, 
             </div>
             <div>{excerpt}</div>
             {read_more_html}
+            {comment_count_between}
             {summary_html}
             <div class="comment-tags-wrapper">
                 <div class="comment-link">{comment_link}</div>
@@ -991,6 +1002,17 @@ def make_index_html(posts, include_admin_nav=False, per_page=30, draft_count=0, 
         }}
 
     </script>
+<script src="https://talk.hyvor.com/embed/embed.js" type="module"></script>
+<script src="https://talk.hyvor.com/embed/comment-counts.js" type="module"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {{
+        hyvorTalkCommentCounts.load({{
+            "website-id": {HYVOR_ID}
+        }});
+    }});
+</script>
+
+
 
 
 </body>
@@ -1520,7 +1542,7 @@ def load_microblog_posts():
                 'timestamp': root.find('timestamp').text,
                 'content': root.find('content').text,
                 'filename': xml_file.name,
-                'filepath': str(xml_file)  # ← LÄGG TILL DENNA RAD!
+                'filepath': str(xml_file)  
             })
         except Exception as e:
             print(f"Fel vid läsning av {xml_file}: {e}")
@@ -1581,17 +1603,24 @@ def make_microblog_html(posts, draft_count=0, upcoming_count=0):
             year = date_obj.strftime("%Y")
             month = date_obj.strftime("%m")
             
+            # Derivera page_id för Hyvor
+            page_id = f"micro_{post_number}"
+            permalink = f"{year}/{month}/micro-{post_number}.html"
+
             posts_html += f'''<div class="micro-post">
 <div class="micro-content">{post['content']}</div>
 <div class="micro-footer">
     <span class="micro-time">{post['timestamp'][:16].replace('T', ' ')}</span>
-    <span class="micro-number"><a href="{year}/{month}/micro-{post_number}.html">#{post_number}</a></span>
+    <a href="{permalink}" style="text-decoration: none; display: flex; align-items: center; gap: 0.5rem;" class="micro-link">
+    <hyvor-talk-comment-count class="comment-count-micro" page-id="{page_id}"></hyvor-talk-comment-count>
+    <span class="micro-number">#{post_number}</span>
+</a>
 </div>
 </div>
 '''
         
         # Pagination
-        pagination_html = make_pagination_html(page_num, total_pages) if total_pages > 1 else ''
+        pagination_html = make_pagination_html(page_num, total_pages, base_path='/micro') if total_pages > 1 else ''
         nav_html = create_nav(active_page='micro', depth=1, draft_count=draft_count, upcoming_count=upcoming_count)
         html_content = f'''<!DOCTYPE html>
 <html lang="sv">
@@ -1624,6 +1653,29 @@ def make_microblog_html(posts, draft_count=0, upcoming_count=0):
 </div>
 </div>
 </main>
+<script src="https://talk.hyvor.com/embed/embed.js" type="module"></script>
+<script src="https://talk.hyvor.com/embed/comment-counts.js" type="module"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {{
+        hyvorTalkCommentCounts.load({{ "website-id": {HYVOR_ID} }});
+    }});
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {{
+    setTimeout(function() {{
+        const commentCounts = document.querySelectorAll('hyvor-talk-comment-count');
+        commentCounts.forEach(function(counter) {{
+            const text = counter.textContent.trim();
+            // Visa bara om det finns kommentarer (inte 0)
+            if (text !== '0' && text !== '0 kommentarer' && text !== '') {{
+                counter.style.display = 'inline'; // eller 'block' beroende på layout
+            }}
+        }});
+    }}, 1000);
+}});
+</script>
+
 </body>
 </html>'''
         
@@ -1944,6 +1996,7 @@ def prepare_posts_for_tag_archive(posts):
             post['excerpt'] = balance_html_tags(post['excerpt']) 
             post['summary'] = post.get("summary", "").strip()
             post['title_slug'] = post['filename'].replace('.html', '')
+            post['page_id'] = post['filename'].replace('.html', '').replace('-', '_')
             full_content = post.get('content', '')
             post['show_read_more'] = not post.get("nobr", False) and post['excerpt'] != full_content
         except Exception as e:
@@ -1952,8 +2005,10 @@ def prepare_posts_for_tag_archive(posts):
             post['month'] = "00"
             post['excerpt'] = ""
             post['title_slug'] = ""
+            post['page_id'] = ""
             post['show_read_more'] = False
     return posts
+
 
 
 
@@ -2003,10 +2058,18 @@ def rebuild_outputs():
                 
                 link = f"posts/{year}/{month}/{post['filename']}"
                 
+                # Derivera page_id från filnamnet
+                page_id = post['filename'].replace('.html', '').replace('-', '_')
+                
                 read_more_html = ""
                 if show_read_more:
                     read_more_html = f'<p><a href="{link}" class="read-more-link">Läs mer →</a></p>'
                 
+                # Kommentarräknare mellan "Läs mer" och AI-sammanfattning
+                comment_count_between = ""
+                if show_read_more:
+                    comment_count_between = f'<div style="margin: 10px 0;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count></a></div>'
+
                 summary_html = ""
                 summary = post.get("summary", "").strip()
                 if show_read_more and summary:
@@ -2016,10 +2079,11 @@ def rebuild_outputs():
         <p>{html.escape(summary)}</p>
     </div>
 </div>'''
-                
+
                 comment_link = ""
                 if not show_read_more:
-                    comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a></p>'
+                    comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count> →</a></p>'
+
                 
                 tags_html = ""
                 if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
@@ -2047,6 +2111,7 @@ def rebuild_outputs():
             </div>
             <div>{excerpt}</div>
             {read_more_html}
+            {comment_count_between}
             {summary_html}
             {comment_link}
             {tags_html}
@@ -2101,6 +2166,14 @@ def rebuild_outputs():
                 .catch(e => alert('Fel: ' + e));
         }}
     }}
+</script>
+<script src="https://talk.hyvor.com/embed/embed.js" type="module"></script>
+<script src="https://talk.hyvor.com/embed/comment-counts.js" type="module"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {{
+        hyvorTalkCommentCounts.load({{ "website-id": {HYVOR_ID} }});
+    }});
 </script>
 
 </body>
@@ -2184,7 +2257,8 @@ def rebuild_outputs():
                                months=months,
                                nav_html=create_nav(active_page='tags', depth=2),
                                site_title=SITE_TITLE,
-                               site_description=SITE_DESCRIPTION)
+                               site_description=SITE_DESCRIPTION,
+                               HYVOR_ID=HYVOR_ID)
             print(f"  render_template lyckades för {tag}")
         except Exception as e:
             print(f"  ERROR i render_template: {str(e)}")
@@ -2212,7 +2286,8 @@ def rebuild_outputs():
                                        months=months,
                                        nav_html=create_nav(active_page='tags', depth=2),
                                        site_title=SITE_TITLE,
-                                       site_description=SITE_DESCRIPTION)
+                                       site_description=SITE_DESCRIPTION,
+                                       HYVOR_ID=HYVOR_ID)
                 except Exception as e:
                     print(f"  ERROR i render_template för sida {page_num}: {str(e)}")
                     continue
@@ -2248,6 +2323,7 @@ def rebuild_outputs():
     rss_output_dir = Path('output/pages')
     rss_output_dir.mkdir(parents=True, exist_ok=True)
     (rss_output_dir / 'rss.html').write_text(rss_page_html, encoding='utf-8')
+
 
 
 
@@ -2863,9 +2939,12 @@ def paginated_index(page_num):
 </div>'''
             
             # Kommentarlänk (endast om INTE "Läs mer")
+            page_id = post['filename'].replace('.html', '').replace('-', '_')
+
             comment_link = ""
             if not show_read_more:
-                comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;">Kommentera →</a></p>'
+                comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count> →</a></p>'
+
             
             # Tags
             tags_html = ""
@@ -2951,7 +3030,14 @@ def paginated_index(page_num):
         }}
     }}
 </script>
+<script src="https://talk.hyvor.com/embed/embed.js" type="module"></script>
+<script src="https://talk.hyvor.com/embed/comment-counts.js" type="module"></script>
 
+<script>
+    document.addEventListener('DOMContentLoaded', function() {{
+        hyvorTalkCommentCounts.load({{ "website-id": {HYVOR_ID} }});
+    }});
+</script>
 </body>
 </html>"""
     except Exception as e:
