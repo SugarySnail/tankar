@@ -99,15 +99,27 @@ def process_images_in_content(content, tags_str=""):
     if is_poetry and not content.strip().startswith('<div role="doc-poem"'):
         content = f'<div role="doc-poem" class="poem-line">{content}</div>'
 
-    # Annars, om det inte börjar med HTML-tag, lägg till <p>
-    elif not is_poetry and not content.strip().startswith('<'):
-        content = f'<p>{content}</p>'
+    # Annars: lägg till <p> SÅVIDA DET INTE REDAN HAR EN BLOCK-ELEMENT PÅ ÖVERSTA NIVÅN
+    elif not is_poetry:
+        # Block-element som INTE behöver <p>-wrapping
+        block_elements = ['p', 'div', 'blockquote', 'ul', 'ol', 'article', 'section', 'figure', 'table', 'pre', 'hr']
+        
+        # Kontrollera om innehållet börjar med en block-element
+        starts_with_block = any(
+            content.strip().startswith(f'<{elem}') or 
+            content.strip().startswith(f'<{elem} ')
+            for elem in block_elements
+        )
+        
+        # Om det INTE börjar med en block-element, lägg till <p>
+        if not starts_with_block:
+            content = f'<p>{content}</p>'
 
     # Processa bilder - behåll alla befintliga attribut
     def replace_img(match):
         img_tag = match.group(0)
 
-        # Normalisera citationstecken ENDAST i den aktuella <img>-taggen
+        # Ersätt citationstecken ENDAST i den aktuella <img>-taggen
         img_tag = img_tag.replace('”', '"')
         img_tag = img_tag.replace('”', '"')
 
@@ -138,6 +150,7 @@ def process_images_in_content(content, tags_str=""):
     content = re.sub(r'<img\b[^>]*/?>', replace_img, content, flags=re.IGNORECASE)
 
     return content
+
 
 
 
@@ -2545,7 +2558,7 @@ def micro_edit(post_id):
                                        draft_count=draft_count,
                                        upcoming_count=upcoming_count), 400
             
-            # Ersätta " med " och processa bilder
+            # Ersätta ” med " och processa bilder
             new_content = new_content.replace('=”', '="')
             new_content = new_content.replace('”>', '">')
             new_content = process_images_in_content(new_content)
