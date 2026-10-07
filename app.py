@@ -2856,14 +2856,20 @@ def create():
             draft = 'draft' in request.form
             
             if not all([title, date, content]):
+                all_posts = load_all_posts()
+                topics_data = get_topics_from_posts(all_posts)
                 return render_template("create.html", 
+                                       topics=topics_data,
                                        error="Alla fält krävs",
                                        default_date=datetime.now().strftime("%Y-%m-%dT%H:%M")), 400
             
             try:
                 datetime.strptime(date, "%Y-%m-%dT%H:%M")
             except ValueError:
+                all_posts = load_all_posts()
+                topics_data = get_topics_from_posts(all_posts)
                 return render_template("create.html", 
+                                       topics=topics_data,
                                        error="Ogiltigt datumformat",
                                        default_date=datetime.now().strftime("%Y-%m-%dT%H:%M")), 400
             
@@ -2872,11 +2878,18 @@ def create():
             
             return redirect("/")
         
+        # GET-request: hämta ordmolnet och visa formulär
+        all_posts = load_all_posts()
+        topics_data = get_topics_from_posts(all_posts)
         default_date = datetime.now().strftime("%Y-%m-%dT%H:%M")
-        return render_template("create.html", default_date=default_date)
+        
+        return render_template("create.html", 
+                               topics=topics_data,
+                               default_date=default_date)
     except Exception as e:
         print(f"Error in create: {e}")
         return f"Serverfel: {str(e)}", 500
+
 
 @app.route("/edit/<path:xml_path>", methods=["GET", "POST"])
 @admin_only
@@ -2906,8 +2919,11 @@ def edit(xml_path):
             if not all([title, date, content]):
                 if xml_file.exists():
                     post = parse_post(str(xml_file))
+                    all_posts = load_all_posts()
+                    topics_data = get_topics_from_posts(all_posts)
                     return render_template("edit.html", 
                                            post=post,
+                                           topics=topics_data,
                                            error="Alla fält krävs"), 400
                 return "Inlägget hittades inte", 404
             
@@ -2916,8 +2932,11 @@ def edit(xml_path):
             except ValueError:
                 if xml_file.exists():
                     post = parse_post(str(xml_file))
+                    all_posts = load_all_posts()
+                    topics_data = get_topics_from_posts(all_posts)
                     return render_template("edit.html", 
                                            post=post,
+                                           topics=topics_data,
                                            error="Ogiltigt datumformat"), 400
                 return "Inlägget hittades inte", 404
             
@@ -2934,7 +2953,8 @@ def edit(xml_path):
             new_xml_file = POSTS_DIR / new_xml_path
             
             # Spara inlägget (med eventuellt nytt filnamn)
-            save_post(title, date, content, tags, summary=summary, topics=topics, xml_filename=str(new_xml_file), nobr=nobr, draft=draft)
+            save_post(title, date, content, tags, summary=summary, topics=topics, 
+                     xml_filename=str(new_xml_file), nobr=nobr, draft=draft)
 
             
             # Om filnamnet ändrades, ta bort gamla filen och gamla HTML-filer
@@ -2957,10 +2977,17 @@ def edit(xml_path):
         if not post:
             return "Inlägget hittades inte", 404
         
-        return render_template("edit.html", post=post)
+        # GET-request: hämta ordmolnet och visa redigeringsformulär
+        all_posts = load_all_posts()
+        topics_data = get_topics_from_posts(all_posts)
+        
+        return render_template("edit.html", 
+                               post=post,
+                               topics=topics_data)
     except Exception as e:
         print(f"Error in edit: {e}")
         return f"Serverfel: {str(e)}", 500
+
 
 
 
