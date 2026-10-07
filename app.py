@@ -228,6 +228,28 @@ def paginate_posts(posts, per_page=30):
     return pages
 
 
+def make_pagination_html_for_topic(current_page, total_pages, topic_slug):
+    """Generera paginering för ämnessidor."""
+    if total_pages <= 1:
+        return ""
+    
+    html = '<div class="pagination">'
+    
+    if current_page > 1:
+        if current_page == 2:
+            html += f'<a href="/topics/{topic_slug}/" class="pagination-link">← Föregående</a>'
+        else:
+            html += f'<a href="/topics/{topic_slug}/page-{current_page-1}.html" class="pagination-link">← Föregående</a>'
+    
+    html += f'<span class="pagination-info">Sida {current_page} av {total_pages}</span>'
+    
+    if current_page < total_pages:
+        html += f'<a href="/topics/{topic_slug}/page-{current_page+1}.html" class="pagination-link">Nästa →</a>'
+    
+    html += '</div>'
+    return html
+
+
 def make_pagination_html(current_page, total_pages, base_path=""):
     """Skapar HTML för sidnavigation (Föregående | Nästa)"""
     html_out = '<nav class="pagination">\n'
@@ -537,7 +559,11 @@ def parse_post(xml_file):
         tags_elem = root.find("tags")
         if tags_elem is not None:
             tags = [tag.text for tag in tags_elem.findall("tag") if tag.text]
-        
+        topics = []
+        topics_elem = root.find("topics")
+        if topics_elem is not None:
+            topics = [topic.text for topic in topics_elem.findall("topic") if topic.text]
+
         title = root.findtext("title", "")
         date = root.findtext("date", "")
         summary = root.findtext("summary", "")
@@ -559,6 +585,8 @@ def parse_post(xml_file):
             "content": root.findtext("content", ""),
             "tags": tags,
             "tags_str": ", ".join(tags),
+            "topics": topics,
+            "topics_str": ", ".join(topics),
             "filename": f"{date_part}-{slugify_filename(title)}.html",
             "xml_filename": str(relative_path),
             "reading_time": reading_time,
@@ -657,7 +685,7 @@ def get_months_from_posts(posts):
 
 
 
-def save_post(title, date, content, tags, summary="", xml_filename=None, nobr=False, draft=False):
+def save_post(title, date, content, tags, summary="", topics="", xml_filename=None, nobr=False, draft=False):
     if not xml_filename:
         date_part = date.split("T")[0]
         slug = slugify(title)
@@ -692,7 +720,12 @@ def save_post(title, date, content, tags, summary="", xml_filename=None, nobr=Fa
         if not content.endswith('</p>'):
             content = f'{content}</p>'
     
-    tags_list = [tag.strip() for tag in tags.split(",") if tag.strip()]  
+    # Behandla tags
+    tags_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    
+    # Behandla topics
+    topics_list = [topic.strip() for topic in topics.split(",") if topic.strip()]
+    
     root = ET.Element("post")
     ET.SubElement(root, "title").text = title
     ET.SubElement(root, "date").text = date
@@ -700,14 +733,56 @@ def save_post(title, date, content, tags, summary="", xml_filename=None, nobr=Fa
     ET.SubElement(root, "content").text = content
     ET.SubElement(root, "nobr").text = "true" if nobr else "false"
     ET.SubElement(root, "draft").text = "true" if draft else "false" 
+    
+    # Lägg till tags
     tags_elem = ET.SubElement(root, "tags")
     for tag in tags_list:  
         ET.SubElement(tags_elem, "tag").text = tag
+    
+    # Lägg till topics
+    topics_elem = ET.SubElement(root, "topics")
+    for topic in topics_list:
+        ET.SubElement(topics_elem, "topic").text = topic
     
     tree = ET.ElementTree(root)
     tree.write(str(xml_filename), encoding="UTF-8", xml_declaration=True)
 
 
+
+def get_topics_from_posts(posts):
+    """Samla alla ämnen från inlägg och räkna förekomster.
+    Returnerar lista av dicts med topic, count och weight."""
+    
+    topic_counts = {}
+    
+    for post in posts:
+        for topic in post.get("topics", []):
+            topic_lower = topic.lower()
+            if topic_lower not in topic_counts:
+                topic_counts[topic_lower] = {
+                    "name": topic,  # Behåll originalstorleken
+                    "count": 0,
+                    "slug": slugify(topic)
+                }
+            topic_counts[topic_lower]["count"] += 1
+    
+    # Konvertera till lista och sortera alfabetiskt
+    topics_list = list(topic_counts.values())
+    topics_list.sort(key=lambda x: x["name"])
+    
+    # Beräkna vikt för varje ämne (för ordmoln)
+    if topics_list:
+        max_count = max(t["count"] for t in topics_list)
+        min_count = min(t["count"] for t in topics_list)
+        
+        for topic in topics_list:
+            # Normalisera mellan 0.7 och 2.0 för textstorlek
+            if max_count == min_count:
+                topic["weight"] = 1.0
+            else:
+                topic["weight"] = 0.7 + (topic["count"] - min_count) / (max_count - min_count) * 1.3
+    
+    return topics_list
 
 
 def get_excerpt(content, tags=None, nobr=False):
@@ -2224,23 +2299,26 @@ def rebuild_outputs():
     all_tags = set()
     for post in posts:
         all_tags.update(post.get("tags", []))
-    all_tags.discard("poesi") # lista inte poesi i arkivet
+    all_tags.discard("poesi")
     tags = sorted(list(all_tags))
-    
+
     posts_without_poesi = [p for p in posts if "poesi" not in p.get("tags", [])]
-    months = get_months_from_posts(posts_without_poesi) # ta inte med poesi i arkivet
-    
+    months = get_months_from_posts(posts_without_poesi)
+
     tags_with_slugs = [{"name": tag, "slug": slugify(tag)} for tag in tags]
+
+    # Samla alla ämnen
+    topics = get_topics_from_posts(posts_without_poesi)
 
     archive_html = render_template("archive.html",
                                    tags=tags_with_slugs,
+                                   topics=topics,
                                    months=months,
                                    site_title=SITE_TITLE,
                                    site_description=SITE_DESCRIPTION,
                                    nav_html=create_nav(active_page='tags', depth=1),
                                    now=datetime.now())
-
-    
+   
     archive_dir = Path('output/tags')
     archive_dir.mkdir(parents=True, exist_ok=True)
     (archive_dir / 'index.html').write_text(archive_html, encoding='utf-8')
@@ -2315,6 +2393,80 @@ def rebuild_outputs():
         print(f"✓ Alla sidor för tag '{tag}' klara ({len(tag_pages)} sidor total)")
 
     print("✓ Tag-sidor klara")
+
+    # Generera ämne-specifika arkiv-sidor
+    all_topics = set()
+    for post in posts_without_poesi:
+        all_topics.update(post.get("topics", []))
+    
+    topics_list = sorted(list(all_topics))
+    
+    for topic in topics_list:
+        topic_slug = slugify(topic)
+        filtered_posts = [p for p in posts_without_poesi if topic in p.get("topics", [])]
+
+        # PAGINATION: Dela upp inlägg i sidor
+        topic_pages = paginate_posts(filtered_posts, per_page=30)
+        
+        print(f"  Topic: {topic}, Slug: {topic_slug}, Inlägg: {len(filtered_posts)}, Sidor: {len(topic_pages)}")
+        
+        # GENERERA FÖRSTA SIDAN (index.html)
+        posts_for_page = prepare_posts_for_tag_archive(topic_pages[0])
+        try:
+            topic_html = render_template("topic_archive.html", 
+                               posts=posts_for_page,
+                               topic=topic,
+                               current_page=1,
+                               total_pages=len(topic_pages),
+                               pagination_html=make_pagination_html_for_topic(1, len(topic_pages), topic_slug),
+                               months=months,
+                               nav_html=create_nav(active_page='topics', depth=2),
+                               site_title=SITE_TITLE,
+                               site_description=SITE_DESCRIPTION,
+                               HYVOR_ID=HYVOR_ID)
+            print(f"  render_template lyckades för topic {topic}")
+        except Exception as e:
+            print(f"  ERROR i render_template: {str(e)}")
+            continue
+        
+        try:
+            topic_dir = Path('output/topics') / topic_slug
+            topic_dir.mkdir(parents=True, exist_ok=True)
+            (topic_dir / 'index.html').write_text(topic_html, encoding='utf-8')
+            print(f"  ✓ Topic-sida '{topic}' (sida 1/{len(topic_pages)}) sparad")
+        except Exception as e:
+            print(f"  ERROR vid sparande: {str(e)}")
+
+        # GENERERA ÖVRIGA SIDOR (page-2.html, page-3.html, osv)
+        if len(topic_pages) > 1:
+            for page_num in range(2, len(topic_pages) + 1):
+                posts_for_page = prepare_posts_for_tag_archive(topic_pages[page_num - 1])
+                try:
+                    topic_html = render_template("topic_archive.html",
+                                       posts=posts_for_page,
+                                       topic=topic,
+                                       current_page=page_num,
+                                       total_pages=len(topic_pages),
+                                       pagination_html=make_pagination_html_for_topic(page_num, len(topic_pages), topic_slug),
+                                       months=months,
+                                       nav_html=create_nav(active_page='topics', depth=2),
+                                       site_title=SITE_TITLE,
+                                       site_description=SITE_DESCRIPTION,
+                                       HYVOR_ID=HYVOR_ID)
+                except Exception as e:
+                    print(f"  ERROR i render_template för sida {page_num}: {str(e)}")
+                    continue
+                
+                try:
+                    output_file = topic_dir / f'page-{page_num}.html'
+                    output_file.write_text(topic_html, encoding='utf-8')
+                    print(f"  ✓ Topic-sida '{topic}' (sida {page_num}/{len(topic_pages)}) sparad")
+                except Exception as e:
+                    print(f"  ERROR vid sparande av sida {page_num}: {str(e)}")
+
+        print(f"✓ Alla sidor för topic '{topic}' klara ({len(topic_pages)} sidor total)")
+
+    print("✓ Topic-sidor klara")
 
     # Generera FAQ-sida
     make_faq_html() 
@@ -2698,6 +2850,7 @@ def create():
             date = request.form.get("date", "").strip()
             content = request.form.get("content", "").strip()
             tags = request.form.get("tags", "").strip()
+            topics = request.form.get("topics", "").strip()
             summary = request.form.get("summary", "").strip()
             nobr = 'nobr' in request.form 
             draft = 'draft' in request.form
@@ -2714,7 +2867,7 @@ def create():
                                        error="Ogiltigt datumformat",
                                        default_date=datetime.now().strftime("%Y-%m-%dT%H:%M")), 400
             
-            save_post(title, date, content, tags, summary, nobr=nobr, draft=draft)
+            save_post(title, date, content, tags, summary=summary, topics=topics, nobr=nobr, draft=draft)
             rebuild_outputs()
             
             return redirect("/")
@@ -2745,6 +2898,7 @@ def edit(xml_path):
             date = request.form.get("date", "").strip()
             content = request.form.get("content", "").strip()
             tags = request.form.get("tags", "").strip()
+            topics = request.form.get("topics", "").strip()
             summary = request.form.get("summary", "").strip()
             nobr = 'nobr' in request.form
             draft = 'draft' in request.form
@@ -2780,7 +2934,7 @@ def edit(xml_path):
             new_xml_file = POSTS_DIR / new_xml_path
             
             # Spara inlägget (med eventuellt nytt filnamn)
-            save_post(title, date, content, tags, summary, xml_filename=str(new_xml_file), nobr=nobr, draft=draft)
+            save_post(title, date, content, tags, summary=summary, topics=topics, xml_filename=str(new_xml_file), nobr=nobr, draft=draft)
 
             
             # Om filnamnet ändrades, ta bort gamla filen och gamla HTML-filer
@@ -2807,6 +2961,7 @@ def edit(xml_path):
     except Exception as e:
         print(f"Error in edit: {e}")
         return f"Serverfel: {str(e)}", 500
+
 
 
 
