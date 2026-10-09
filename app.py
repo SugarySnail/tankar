@@ -174,7 +174,7 @@ def process_content_for_rss(content):
             return inner_content + '<br/>'
         
         blockquote_content = re.sub(
-            r'<div\s+role=["\']doc-poem["\']\s+class=["\']poem-line["\']\s*>(.*?)</div>',
+            r'<div\s+[^>]*?role=["\']doc-poem["\'][^>]*?class=["\']poem-line["\'][^>]*?>(.*?)</div>',
             convert_poem_div,
             blockquote_content,
             flags=re.IGNORECASE | re.DOTALL
