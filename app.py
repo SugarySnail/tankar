@@ -159,7 +159,37 @@ def process_images_in_content(content, tags_str=""):
 def process_content_for_rss(content):
     """Konverterar poesi-divs med bevarade radbrytningar till RSS-format"""
     
-    # Extrahera allt innehåll från poem-line divs och konvertera radbrytningar till <br/>
+    # Först: Processar poem-line divs INUTI blockquotes
+    def convert_poem_div_in_blockquote(match):
+        blockquote_content = match.group(1)
+        
+        # Hitta alla poem-line divs inom blockquoten
+        def convert_poem_div(inner_match):
+            inner_content = inner_match.group(1)
+            # Konvertera varje radbrytning inom divet till <br/>
+            inner_content = inner_content.replace('\n', '<br/>')
+            # Ta bort ledande/släpande whitespace per rad
+            inner_content = re.sub(r'<br/>(\s+)', '<br/>', inner_content)
+            inner_content = re.sub(r'(\s+)<br/>', '<br/>', inner_content)
+            return inner_content + '<br/>'
+        
+        blockquote_content = re.sub(
+            r'<div\s+role=["\']doc-poem["\']\s+class=["\']poem-line["\']\s*>(.*?)</div>',
+            convert_poem_div,
+            blockquote_content,
+            flags=re.IGNORECASE | re.DOTALL
+        )
+        
+        return f'<blockquote>{blockquote_content}</blockquote>'
+    
+    content = re.sub(
+        r'<blockquote\s*>(.*?)</blockquote>',
+        convert_poem_div_in_blockquote,
+        content,
+        flags=re.IGNORECASE | re.DOTALL
+    )
+    
+    # Sedan: Processar poem-line divs UTANFÖR blockquotes 
     def convert_poem_div(match):
         inner_content = match.group(1)
         # Konvertera varje radbrytning inom divet till <br/>
@@ -186,7 +216,7 @@ def process_content_for_rss(content):
         return f'<img src="{src}" style="max-width: 100%; height: auto; display: block; margin: 1rem 0;">'
     
     content = re.sub(r'<img[^>]*/?>', replace_img, content)
-
+    
     # Konvertera manuellt skrivna <br> till XML-standard <br/>, men skippa redan korrekta <br/>
     content = re.sub(r'<br(?!/)>', '<br/>', content, flags=re.IGNORECASE)
     
@@ -194,6 +224,7 @@ def process_content_for_rss(content):
     content = strip_nobr_marker(content)
     
     return content
+
 
 
 
