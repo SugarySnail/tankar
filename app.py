@@ -2140,7 +2140,172 @@ def prepare_posts_for_tag_archive(posts):
             post['show_read_more'] = False
     return posts
 
+def build_tags_html(post):
+    """Bygger HTML för tags"""
+    if not post.get("tags") or 'poesi' in [t.lower() for t in post["tags"]]:
+        return ""
+    
+    tag_links = []
+    for tag in post["tags"]:
+        tag_slug = tag.replace(" ", "-").lower()
+        tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
+    
+    return f'<div class="tags" style="text-align: right; margin-top: 0rem;">{" ".join(tag_links)}</div>'
 
+def build_reading_time_html(post):
+    """Bygger HTML för lästid"""
+    if not post.get("tags") or 'poesi' in [t.lower() for t in post["tags"]]:
+        return ""
+    
+    reading_time = post.get("reading_time", "")
+    if reading_time:
+        return f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {reading_time}</span>'
+    
+    return ""
+
+def build_post_card(post, link):
+    """Bygger en HTML-kort för ett blogginlägg"""
+    safe_title = html.escape(post["title"])
+    
+    try:
+        dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
+        formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+    except:
+        formatted_date = post["date"]
+    
+    safe_date = html.escape(formatted_date)
+    full_content = post["content"]
+    page_id = post['filename'].replace('.html', '').replace('-', '_')
+    
+    excerpt = get_excerpt(full_content, tags=post.get("tags"), nobr=post.get("nobr", False))
+    excerpt = balance_html_tags(excerpt)
+    show_read_more = not post.get("nobr", False) and excerpt != full_content
+    
+    # Build components
+    read_more_html = f'<p><a href="{link}" class="read-more-link">Läs mer →</a></p>' if show_read_more else ""
+    
+    comment_count_between = ""
+    if show_read_more:
+        comment_count_between = f'<div style="margin: 10px 0;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count></a></div>'
+    
+    summary_html = ""
+    summary = post.get("summary", "").strip()
+    if show_read_more and summary:
+        summary_html = f'''<div class="ai-summary-wrapper">
+    <a class="toggle-summary" onclick="toggleSummary(event)">Visa AI-sammanfattning</a>
+    <div class="ai-summary-box">
+        <p>{html.escape(summary)}</p>
+    </div>
+</div>'''
+    
+    comment_link = ""
+    if not show_read_more:
+        comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count> →</a></p>'
+    
+    tags_html = build_tags_html(post)
+    reading_time_html = build_reading_time_html(post)
+    
+    return f"""
+        <div class="card">
+            <h2><a href="{link}">{safe_title}</a></h2>
+            <div class="date-tags-wrapper">
+                <span class="date">{safe_date}</span>
+                {reading_time_html}
+            </div>
+            <div>{excerpt}</div>
+            {read_more_html}
+            {comment_count_between}
+            {summary_html}
+            {comment_link}
+            {tags_html}
+        </div>"""
+
+
+def generate_archive_pages(items, item_type, template_name, pagination_func, url_prefix, posts, posts_without_poesi, months):
+    """
+    Genererar arkiv-sidor för tags eller topics
+    
+    Args:
+        items: Lista över tags eller topics
+        item_type: "tag" eller "topic"
+        template_name: "tag_archive.html" eller "topic_archive.html"
+        pagination_func: make_pagination_html_for_tag eller make_pagination_html_for_topic
+        url_prefix: "tags" eller "topics"
+        posts: Lista över alla inlägg
+        posts_without_poesi: Lista över inlägg utan poesi
+        months: Månadslista
+    """
+    for item in items:
+        if item == "poesi":  # Skip poesi
+            continue
+        
+        item_slug = slugify(item)
+        
+        # Filter posts
+        if item_type == "tag":
+            filtered_posts = [p for p in posts if item in p.get("tags", []) and "poesi" not in p.get("tags", [])]
+        else:  # topic
+            filtered_posts = [p for p in posts_without_poesi if item in p.get("topics", [])]
+        
+        item_pages = paginate_posts(filtered_posts, per_page=30)
+        
+        print(f"  {item_type.capitalize()}: {item}, Slug: {item_slug}, Inlägg: {len(filtered_posts)}, Sidor: {len(item_pages)}")
+        
+        # Generate first page
+        posts_for_page = prepare_posts_for_tag_archive(item_pages[0])
+        try:
+            item_html = render_template(template_name,
+                               posts=posts_for_page,
+                               **{item_type: item},  # Either "tag" or "topic"
+                               current_page=1,
+                               total_pages=len(item_pages),
+                               pagination_html=pagination_func(1, len(item_pages), item_slug),
+                               months=months,
+                               nav_html=create_nav(active_page=url_prefix, depth=2),
+                               site_title=SITE_TITLE,
+                               site_description=SITE_DESCRIPTION,
+                               HYVOR_ID=HYVOR_ID)
+        except Exception as e:
+            print(f"  ERROR i render_template: {str(e)}")
+            continue
+        
+        # Save first page
+        try:
+            item_dir = Path(f'output/{url_prefix}') / item_slug
+            item_dir.mkdir(parents=True, exist_ok=True)
+            (item_dir / 'index.html').write_text(item_html, encoding='utf-8')
+            print(f"  ✓ {item_type.capitalize()}-sida '{item}' (sida 1/{len(item_pages)}) sparad")
+        except Exception as e:
+            print(f"  ERROR vid sparande: {str(e)}")
+
+        # Generate remaining pages
+        if len(item_pages) > 1:
+            for page_num in range(2, len(item_pages) + 1):
+                posts_for_page = prepare_posts_for_tag_archive(item_pages[page_num - 1])
+                try:
+                    item_html = render_template(template_name,
+                                       posts=posts_for_page,
+                                       **{item_type: item},
+                                       current_page=page_num,
+                                       total_pages=len(item_pages),
+                                       pagination_html=pagination_func(page_num, len(item_pages), item_slug),
+                                       months=months,
+                                       nav_html=create_nav(active_page=url_prefix, depth=2),
+                                       site_title=SITE_TITLE,
+                                       site_description=SITE_DESCRIPTION,
+                                       HYVOR_ID=HYVOR_ID)
+                except Exception as e:
+                    print(f"  ERROR i render_template för sida {page_num}: {str(e)}")
+                    continue
+                
+                try:
+                    output_file = item_dir / f'page-{page_num}.html'
+                    output_file.write_text(item_html, encoding='utf-8')
+                    print(f"  ✓ {item_type.capitalize()}-sida '{item}' (sida {page_num}/{len(item_pages)}) sparad")
+                except Exception as e:
+                    print(f"  ERROR vid sparande av sida {page_num}: {str(e)}")
+
+        print(f"✓ Alla sidor för {item_type} '{item}' klara ({len(item_pages)} sidor total)")
 
 
 def rebuild_outputs():
@@ -2164,90 +2329,13 @@ def rebuild_outputs():
             
             cards = ""
             for post in page_posts:
-                safe_title = html.escape(post["title"])
-                
-                try:
-                    dt = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
-                    formatted_date = dt.strftime("%Y-%m-%d %H:%M")
-                except:
-                    formatted_date = post["date"]
-                
-                safe_date = html.escape(formatted_date)
-                full_content = post["content"]
-                
-                xml_filename = post['filename'].replace('.html', '.xml')
                 year = post['date'].split('-')[0]
                 month = post['date'].split('-')[1]
-                year_month_path = f"{year}/{month}/{xml_filename}"
-
-                edit_delete_buttons_top = ""
-                edit_delete_buttons_bottom = ""
-
-                excerpt = get_excerpt(full_content, tags=post.get("tags"), nobr=post.get("nobr", False))
-                excerpt = balance_html_tags(excerpt)  # ← Stäng alla öppna taggar
-                show_read_more = not post.get("nobr", False) and excerpt != full_content
-                
                 link = f"posts/{year}/{month}/{post['filename']}"
-                
-                # Derivera page_id från filnamnet
-                page_id = post['filename'].replace('.html', '').replace('-', '_')
-                
-                read_more_html = ""
-                if show_read_more:
-                    read_more_html = f'<p><a href="{link}" class="read-more-link">Läs mer →</a></p>'
-                
-                # Kommentarräknare mellan "Läs mer" och AI-sammanfattning
-                comment_count_between = ""
-                if show_read_more:
-                    comment_count_between = f'<div style="margin: 10px 0;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count></a></div>'
+    
+                card_html = build_post_card(post, link)
+                cards += card_html
 
-                summary_html = ""
-                summary = post.get("summary", "").strip()
-                if show_read_more and summary:
-                    summary_html = f'''<div class="ai-summary-wrapper">
-    <a class="toggle-summary" onclick="toggleSummary(event)">Visa AI-sammanfattning</a>
-    <div class="ai-summary-box">
-        <p>{html.escape(summary)}</p>
-    </div>
-</div>'''
-
-                comment_link = ""
-                if not show_read_more:
-                    comment_link = f'<p style="margin-top: 1rem;"><a href="{link}#kommentarer" style="text-decoration: none; color: #666;"><hyvor-talk-comment-count page-id="{page_id}"></hyvor-talk-comment-count> →</a></p>'
-
-                
-                tags_html = ""
-                if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
-                    tag_links = []
-                    for tag in post["tags"]:
-                        tag_slug = tag.replace(" ", "-").lower()
-                        tag_links.append(f'<a href="tags/{tag_slug}/" style="text-decoration: none;"><span class="tag">{html.escape(tag)}</span></a>')
-                    tags_html = " ".join(tag_links)
-                    tags_html = f'<div class="tags" style="text-align: right; margin-top: 0rem;">{tags_html}</div>'
-
-                
-                reading_time_html = ""
-                if post.get("tags") and 'poesi' not in [t.lower() for t in post["tags"]]:
-                    reading_time = post.get("reading_time", "")
-                    if reading_time:
-                        reading_time_html = f'<span class="reading-time" style="margin-left: 15px; color: #999;"><span class="reading-time-icon">⏱</span> {reading_time}</span>'
-                
-                cards += f"""
-        <div class="card">
-            {edit_delete_buttons_top}
-            <h2><a href="{link}">{safe_title}</a></h2>
-            <div class="date-tags-wrapper">
-                <span class="date">{safe_date}</span>
-                {reading_time_html}
-            </div>
-            <div>{excerpt}</div>
-            {read_more_html}
-            {comment_count_between}
-            {summary_html}
-            {comment_link}
-            {tags_html}
-            {edit_delete_buttons_bottom}
-        </div>"""
 
             pagination = make_pagination_html(page_num, len(pages))
             
@@ -2367,73 +2455,15 @@ def rebuild_outputs():
     (archive_dir / 'index.html').write_text(archive_html, encoding='utf-8')
 
     # Generera tag-specifika arkiv-sidor
-    for tag in tags:
-        if tag == "poesi":  # Hoppa över poesi-taggen
-            continue
-        
-        tag_slug = slugify(tag)
-        filtered_posts = [p for p in posts if tag in p.get("tags", []) and "poesi" not in p.get("tags", [])]
+    generate_archive_pages(tags, "tag", "tag_archive.html", make_pagination_html_for_tag, "tags", posts, posts_without_poesi, months)
 
-        # PAGINATION: Dela upp inlägg i sidor
-        tag_pages = paginate_posts(filtered_posts, per_page=30)
-        
-        print(f"  Tag: {tag}, Slug: {tag_slug}, Inlägg: {len(filtered_posts)}, Sidor: {len(tag_pages)}")
-        
-        # GENERERA FÖRSTA SIDAN (index.html)
-        posts_for_page = prepare_posts_for_tag_archive(tag_pages[0])
-        try:
-            tag_html = render_template("tag_archive.html", 
-                               posts=posts_for_page,
-                               tag=tag,
-                               current_page=1,
-                               total_pages=len(tag_pages),
-                               pagination_html=make_pagination_html_for_tag(1, len(tag_pages), tag_slug),
-                               months=months,
-                               nav_html=create_nav(active_page='tags', depth=2),
-                               site_title=SITE_TITLE,
-                               site_description=SITE_DESCRIPTION,
-                               HYVOR_ID=HYVOR_ID)
-            print(f"  render_template lyckades för {tag}")
-        except Exception as e:
-            print(f"  ERROR i render_template: {str(e)}")
-            continue
-        
-        try:
-            tag_dir = Path('output/tags') / tag_slug
-            tag_dir.mkdir(parents=True, exist_ok=True)
-            (tag_dir / 'index.html').write_text(tag_html, encoding='utf-8')
-            print(f"  ✓ Tag-sida '{tag}' (sida 1/{len(tag_pages)}) sparad")
-        except Exception as e:
-            print(f"  ERROR vid sparande: {str(e)}")
+    # Generera ämne-specifika arkiv-sidor
+    all_topics = set()
+    for post in posts_without_poesi:
+        all_topics.update(post.get("topics", []))
 
-        # GENERERA ÖVRIGA SIDOR (page-2.html, page-3.html, osv)
-        if len(tag_pages) > 1:
-            for page_num in range(2, len(tag_pages) + 1):
-                posts_for_page = prepare_posts_for_tag_archive(tag_pages[page_num - 1])
-                try:
-                    tag_html = render_template("tag_archive.html",
-                                       posts=posts_for_page,
-                                       tag=tag,
-                                       current_page=page_num,
-                                       total_pages=len(tag_pages),
-                                       pagination_html=make_pagination_html_for_tag(page_num, len(tag_pages), tag_slug),
-                                       months=months,
-                                       nav_html=create_nav(active_page='tags', depth=2),
-                                       site_title=SITE_TITLE,
-                                       site_description=SITE_DESCRIPTION,
-                                       HYVOR_ID=HYVOR_ID)
-                except Exception as e:
-                    print(f"  ERROR i render_template för sida {page_num}: {str(e)}")
-                    continue
-                
-                try:
-                    output_file = tag_dir / f'page-{page_num}.html'
-                    output_file.write_text(tag_html, encoding='utf-8')
-                    print(f"  ✓ Tag-sida '{tag}' (sida {page_num}/{len(tag_pages)}) sparad")
-                except Exception as e:
-                    print(f"  ERROR vid sparande av sida {page_num}: {str(e)}")
-
-        print(f"✓ Alla sidor för tag '{tag}' klara ({len(tag_pages)} sidor total)")
+    topics_list = sorted(list(all_topics))
+    generate_archive_pages(topics_list, "topic", "topic_archive.html", make_pagination_html_for_topic, "topics", posts, posts_without_poesi, months)
 
     print("✓ Tag-sidor klara")
 
