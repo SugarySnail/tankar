@@ -600,6 +600,7 @@ def parse_post(xml_file):
         summary = root.findtext("summary", "")
         nobr = root.findtext("nobr", "false") == "true"
         draft = root.findtext("draft", "false") == "true"
+        force_publish = root.findtext("force_publish", "false") == "true"
         date_part = date.split("T")[0] if date else "0000-00-00"
         
         # Konvertera till relativ sökväg från POSTS_DIR
@@ -623,6 +624,7 @@ def parse_post(xml_file):
             "reading_time": reading_time,
             "nobr": nobr,
             "draft": draft,
+            "force_publish": force_publish,
         }
     except Exception as e:
         print(f"Error parsing {xml_file}: {e}")
@@ -632,14 +634,19 @@ def parse_post(xml_file):
 def is_post_published(post):
     """
     Kontrollerar om ett inlägg bör publiceras.
-    Returnerar False om datumet ligger i framtiden.
+    Returnerar False om datumet ligger i framtiden, SÅVIDA det inte har force_publish=true.
     """
     try:
         post_datetime = datetime.strptime(post["date"], "%Y-%m-%dT%H:%M")
         current_datetime = datetime.now()
-        return post_datetime <= current_datetime
+        is_future = post_datetime > current_datetime
+        force_publish = post.get("force_publish", False)
+        
+        # Publicera om: det inte är framtida, ELLER om force_publish är satt
+        return not is_future or force_publish
     except Exception:
         return True  # Om datumformat är fel, publicera det
+
 
 
 def get_post_by_xml_filename(xml_filename):
@@ -716,7 +723,7 @@ def get_months_from_posts(posts):
 
 
 
-def save_post(title, date, content, tags, summary="", topics="", xml_filename=None, nobr=False, draft=False):
+def save_post(title, date, content, tags, summary="", topics="", xml_filename=None, nobr=False, draft=False, force_publish=False):
     if not xml_filename:
         date_part = date.split("T")[0]
         slug = slugify(title)
@@ -763,7 +770,8 @@ def save_post(title, date, content, tags, summary="", topics="", xml_filename=No
     ET.SubElement(root, "summary").text = summary
     ET.SubElement(root, "content").text = content
     ET.SubElement(root, "nobr").text = "true" if nobr else "false"
-    ET.SubElement(root, "draft").text = "true" if draft else "false" 
+    ET.SubElement(root, "draft").text = "true" if draft else "false"
+    ET.SubElement(root, "force_publish").text = "true" if force_publish else "false"
     
     # Lägg till tags
     tags_elem = ET.SubElement(root, "tags")
@@ -777,6 +785,7 @@ def save_post(title, date, content, tags, summary="", topics="", xml_filename=No
     
     tree = ET.ElementTree(root)
     tree.write(str(xml_filename), encoding="UTF-8", xml_declaration=True)
+
 
 
 
@@ -915,7 +924,7 @@ def make_index_html(posts, include_admin_nav=False, per_page=30, draft_count=0, 
     """Generera indexsida med pagination"""
     nav_html = create_nav(active_page='home', depth=0)
     
-    # Filtrera bort framtida inlägg
+    # Filtrera bort framtida inlägg (om de inte är force_publish)
     posts = [post for post in posts if is_post_published(post)]
 
 
@@ -1948,6 +1957,9 @@ def make_om_html():
  <h2>Om My</h2>
 <p>Jag som roddar med den här sidan är 45 år gammal, poet och hemmastad i Uppsala. Jag är lika upplyst som Siddharta och verkar också ha gått och blivit ett orakel, men verkar mest sia om hur jävla viktig jag tror att jag själv är. Jag tycker väldigt mycket om mig själv.
 </p>
+<h2>Sociala medier</h2>
+<p>Jag finns på min egen domän myjak.net och har mitt forum på <a href="https://myjak.flarum.cloud/">Flarum</a>. Utöver det har jag kanalen <a href="https://www.youtube.com/@LovingFreaks">LovingFreaks</a> på YouTube. Ser du mig på någon annan social plattform så är det inte mitt konto. <b>Jag har alltså inget konto på TikTok, Facebook, Instagram eller X, osv.</b> och kommer aldrig att ha det.
+</p>
                 <h2>Om webbplatsen</h2>
                 <p>Webbplatsen är byggd i samarbete med Claude Haiku 4.5 AI. Claude står också för AI-sammanfattningarna, som jag kurerar innan de används. Tecknade bilden överst i mikrobloggen samt forumavataren är genererade av GPT 5.4 AI. Jag ser fram emot att en dag ha en inkomst och kunna betala en människa för att hjälpa mig med bilder och grafik, men för stunden så är det vad det är.</p><p>Allt övrigt innehåll i form av text och bild kommer ifrån My, om inte annat tydligt anges. <b>Copyright råder</b>, men det förstår ni. Ni är vuxna människor!
 
@@ -2885,6 +2897,7 @@ def create():
             summary = request.form.get("summary", "").strip()
             nobr = 'nobr' in request.form 
             draft = 'draft' in request.form
+            force_publish = 'force_publish' in request.form
             
             if not all([title, date, content]):
                 all_posts = load_all_posts()
@@ -2904,7 +2917,8 @@ def create():
                                        error="Ogiltigt datumformat",
                                        default_date=datetime.now().strftime("%Y-%m-%dT%H:%M")), 400
             
-            save_post(title, date, content, tags, summary=summary, topics=topics, nobr=nobr, draft=draft)
+            save_post(title, date, content, tags, summary=summary, topics=topics, 
+                     nobr=nobr, draft=draft, force_publish=force_publish)
             rebuild_outputs()
             
             return redirect("/")
@@ -2946,6 +2960,7 @@ def edit(xml_path):
             summary = request.form.get("summary", "").strip()
             nobr = 'nobr' in request.form
             draft = 'draft' in request.form
+            force_publish = 'force_publish' in request.form
             
             if not all([title, date, content]):
                 if xml_file.exists():
@@ -2985,7 +3000,8 @@ def edit(xml_path):
             
             # Spara inlägget (med eventuellt nytt filnamn)
             save_post(title, date, content, tags, summary=summary, topics=topics, 
-                     xml_filename=str(new_xml_file), nobr=nobr, draft=draft)
+                     xml_filename=str(new_xml_file), nobr=nobr, draft=draft, 
+                     force_publish=force_publish)
 
             
             # Om filnamnet ändrades, ta bort gamla filen och gamla HTML-filer
@@ -3018,6 +3034,7 @@ def edit(xml_path):
     except Exception as e:
         print(f"Error in edit: {e}")
         return f"Serverfel: {str(e)}", 500
+
 
 
 
